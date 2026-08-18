@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Geoportal RTA-MSI — Ordens de Serviço</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --azul:#1E3A72; --azul-claro:#2d4f92; --cinza:#64748B; --fundo:#F1F5F9; --borda:#E2E8F0;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%; font-family:'Segoe UI',system-ui,sans-serif;}
+  #app{display:flex; height:100%; position:relative;}
+
+  /* ---------- Painel lateral ---------- */
+  #painel{
+    width:330px; min-width:330px; background:#fff; border-right:1px solid var(--borda);
+    display:flex; flex-direction:column; z-index:1100; box-shadow:2px 0 8px rgba(0,0,0,.08);
+  }
+  #painel header{
+    background:var(--azul); color:#fff; padding:12px 14px; display:flex; flex-direction:column; gap:10px;
+  }
+  #painel header .cabeca-topo{display:flex; align-items:center; gap:10px;}
+  #painel header .logos{display:flex; gap:6px; flex:none;}
+  #painel header img{height:34px; background:#fff; border-radius:6px; padding:3px;}
+  #painel header h1{font-size:14.5px; line-height:1.3;}
+  #painel header small{font-weight:400; opacity:.85; font-size:11px; display:block; margin-top:2px;}
+  #painel .conteudo{flex:1; overflow-y:auto; padding:12px;}
+
+  label.rotulo{display:block; font-size:12px; font-weight:600; color:var(--azul); margin:10px 0 4px;}
+  label.rotulo:first-child{margin-top:0;}
+  select{
+    width:100%; padding:7px 8px; border:1px solid var(--borda); border-radius:6px;
+    font-size:13px; font-family:inherit; background:#fff;
+  }
+
+  .dica{font-size:11px; color:var(--cinza); margin-top:14px; line-height:1.5;}
+  .vazio{font-size:12px; color:var(--cinza); font-style:italic; padding:10px 2px;}
+  .separador{border:none; border-top:1px dashed var(--borda); margin:14px 0;}
+  select:disabled{background:var(--fundo); color:var(--cinza); cursor:not-allowed;}
+
+  /* ---------- Mapa ---------- */
+  #map{flex:1; height:100%; z-index:1;}
+
+  /* ---------- Gaveta de detalhe da O.S.P. ---------- */
+  #drawer{
+    position:absolute; left:330px; right:0; bottom:0; max-height:55%; background:#fff;
+    border-top:1px solid var(--borda); box-shadow:0 -2px 10px rgba(0,0,0,.15);
+    z-index:1000; display:none; flex-direction:column;
+  }
+  #drawer.aberta{display:flex;}
+  #drawer .cabeca-drawer{
+    display:flex; align-items:center; justify-content:space-between; padding:9px 14px;
+    border-bottom:1px solid var(--borda); background:var(--fundo); flex:none;
+  }
+  #drawer .cabeca-drawer h2{font-size:13.5px; color:var(--azul);}
+  #drawer .cabeca-drawer small{color:var(--cinza); font-size:11px; display:block; font-weight:400;}
+  #drawer .fechar{
+    border:none; background:none; font-size:18px; line-height:1; cursor:pointer;
+    color:var(--cinza); padding:2px 8px;
+  }
+  #drawer .fechar:hover{color:#1e293b;}
+  #drawer .corpo-drawer{overflow:auto; padding:0 14px 12px;}
+  #drawer table{width:100%; border-collapse:collapse; font-size:12px;}
+  #drawer th{
+    position:sticky; top:0; background:#fff; text-align:left; padding:7px 8px;
+    border-bottom:2px solid var(--borda); color:#334155; white-space:nowrap;
+  }
+  #drawer td{padding:5px 8px; border-bottom:1px solid var(--borda); white-space:nowrap;}
+
+  /* ---------- KPIs em grade ---------- */
+  .kpis-grade{display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-top:4px;}
+  .kpi-mini{
+    background:var(--fundo); border:1px solid var(--borda); border-radius:8px;
+    padding:8px 4px; text-align:center;
+  }
+  .kpi-mini b{display:block; font-size:15px; color:var(--azul); font-weight:800; white-space:nowrap;}
+  .kpi-mini span{font-size:9px; color:var(--cinza); line-height:1.25;}
+
+  /* ---------- Cartão de O.S.P. (gaveta) ---------- */
+  .bloco-os{
+    margin:0 0 12px; padding:9px 12px; background:#FFFBEB; border:1px solid #FDE68A;
+    border-left:3px solid #D97706; border-radius:6px;
+  }
+  .bloco-os h4{
+    font-size:11.5px; color:#92400E; margin-bottom:6px; display:flex; align-items:center; gap:5px;
+  }
+  .bloco-os .linha{display:flex; justify-content:space-between; gap:8px; padding:1.5px 0; font-size:11.5px;}
+  .bloco-os .linha .rot{color:#78350F;}
+  .bloco-os .linha .val{color:#451A03; font-weight:600; text-align:right;}
+  .bloco-os .total{
+    display:flex; justify-content:space-between; margin-top:5px; padding-top:5px;
+    border-top:1px solid #FDE68A; font-size:12px;
+  }
+  .bloco-os .total b{color:#92400E;}
+
+  /* ---------- Lista de O.S.P. ---------- */
+  .os-item{
+    display:block; width:100%; text-align:left; background:#fff; border:1px solid var(--borda);
+    border-left:3px solid var(--borda); border-radius:6px; padding:8px 10px; margin-bottom:8px;
+    cursor:pointer; font-family:inherit;
+  }
+  .os-item:hover{background:var(--fundo);}
+  .os-item .rodovia{font-size:12.5px; font-weight:600; color:var(--azul);}
+  .os-item .sub{font-size:11px; color:var(--cinza); margin-top:1px;}
+  .os-item .rodape{display:flex; justify-content:space-between; align-items:center; margin-top:4px;}
+  .os-item .valor{font-size:12px; font-weight:600; color:#334155;}
+  .os-item .tag-tipo{font-size:9px; color:var(--cinza); text-transform:uppercase; letter-spacing:.3px;}
+  .badge-situacao{
+    display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:20px;
+    color:#fff; font-size:10.5px; font-weight:700; letter-spacing:.2px; white-space:nowrap;
+    box-shadow:0 1px 3px rgba(0,0,0,.2);
+  }
+
+  /* ---------- Botão retrátil "Filtros" ---------- */
+  .btn-filtros{
+    width:100%; display:flex; align-items:center; gap:6px; margin-top:12px;
+    background:var(--fundo); border:1px solid var(--borda); border-radius:8px;
+    padding:8px 10px; cursor:pointer; font-family:inherit; text-align:left;
+  }
+  .btn-filtros .rotulo-filtros{font-size:12.5px; font-weight:600; color:var(--azul); flex:none;}
+  .btn-filtros .filtros-resumo{
+    flex:1; font-size:11.5px; color:var(--cinza); overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; min-width:0;
+  }
+  .btn-filtros .filtros-seta{flex:none; color:var(--cinza); transition:transform .15s;}
+  .btn-filtros.aberto .filtros-seta{transform:rotate(180deg);}
+  .filtros-corpo{display:none; padding-top:10px;}
+  .filtros-corpo.aberto{display:block;}
+
+  /* ---------- Pills de filtro por situação ---------- */
+  .pills-situacao{display:flex; flex-wrap:wrap; gap:5px;}
+  .pill-situacao{
+    display:inline-flex; align-items:center; border:1px solid var(--borda); background:#fff;
+    border-radius:20px; padding:5px 11px; font-size:11px; cursor:pointer; color:#334155;
+    font-family:inherit; transition:box-shadow .15s, transform .1s;
+  }
+  .pill-situacao:hover{box-shadow:0 2px 6px rgba(0,0,0,.1); transform:translateY(-1px);}
+  .pill-situacao.ativa{color:#fff; border-color:transparent; box-shadow:0 2px 8px rgba(0,0,0,.18);}
+  .pill-situacao .n{opacity:.8; margin-left:3px;}
+
+  .leaflet-control-layers{font-size:13px;}
+
+  /* ---------- Botão do cabeçalho (abre o Painel Executivo) ---------- */
+  .btn-header{
+    width:100%; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.35);
+    color:#fff; border-radius:7px; padding:8px 11px; font-size:12px; font-weight:600;
+    cursor:pointer; font-family:inherit;
+  }
+  .btn-header:hover{background:rgba(255,255,255,.26);}
+
+  /* ---------- Painel Executivo (dashboard de apresentação) ---------- */
+  #dashboard-overlay{
+    position:fixed; inset:0; background:var(--fundo); z-index:2000;
+    display:none; flex-direction:column;
+  }
+  #dashboard-overlay.aberto{display:flex;}
+  #dashboard-overlay .dash-cabeca{
+    background:var(--azul); color:#fff; padding:12px 20px; display:flex; align-items:center;
+    gap:14px; flex:none; box-shadow:0 2px 8px rgba(0,0,0,.15); z-index:1;
+  }
+  #dashboard-overlay .dash-cabeca .logos{display:flex; gap:6px;}
+  #dashboard-overlay .dash-cabeca img{height:36px; background:#fff; border-radius:6px; padding:3px;}
+  #dashboard-overlay .dash-cabeca h1{font-size:16px;}
+  #dashboard-overlay .dash-cabeca small{opacity:.85; font-size:11.5px; display:block; font-weight:400; margin-top:2px;}
+  #dashboard-overlay .dash-acoes{margin-left:auto; display:flex; gap:8px;}
+  #dashboard-overlay .dash-acoes button{
+    background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.35); color:#fff;
+    border-radius:7px; padding:7px 12px; font-size:13px; cursor:pointer; font-family:inherit;
+  }
+  #dashboard-overlay .dash-acoes button:hover{background:rgba(255,255,255,.26);}
+  #dashboard-overlay .dash-corpo{flex:1; overflow:auto; padding:18px 22px 26px;}
+
+  .dash-kpis{display:grid; grid-template-columns:repeat(6, 1fr); gap:12px; margin-bottom:18px;}
+  .dash-kpi{
+    background:#fff; border:1px solid var(--borda); border-radius:10px; padding:12px 10px;
+    text-align:center; box-shadow:0 1px 3px rgba(0,0,0,.04);
+  }
+  .dash-kpi b{display:block; font-size:19px; color:var(--azul); font-weight:800; white-space:nowrap;}
+  .dash-kpi span{font-size:10.5px; color:var(--cinza); line-height:1.3;}
+
+  .dash-graficos{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  .dash-card{
+    background:#fff; border:1px solid var(--borda); border-radius:10px; padding:14px 16px;
+    display:flex; flex-direction:column; box-shadow:0 1px 3px rgba(0,0,0,.04);
+  }
+  .dash-card .dash-card-cabeca{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; margin-bottom:8px;}
+  .dash-card h3{font-size:13px; color:var(--azul);}
+  .dash-card .dash-canvas{position:relative; height:260px;}
+  .dash-toggle{display:flex; gap:4px; flex-wrap:wrap;}
+  .dash-toggle button{
+    border:1px solid var(--borda); background:#fff; border-radius:6px; padding:4px 8px;
+    font-size:10.5px; cursor:pointer; color:#334155; font-family:inherit; white-space:nowrap;
+  }
+  .dash-toggle button.ativo{background:var(--azul); color:#fff; border-color:var(--azul);}
+
+  /* ---------- Popover "Exportar" (escolha do que entra na imagem) ---------- */
+  .export-opcoes{
+    display:none; position:absolute; top:64px; right:20px; z-index:2100;
+    background:#fff; border:1px solid var(--borda); border-radius:10px;
+    box-shadow:0 8px 24px rgba(0,0,0,.18); padding:12px 14px; min-width:240px;
+  }
+  .export-opcoes.aberto{display:block;}
+  .export-opcoes .export-opcoes-titulo{font-size:12px; font-weight:700; color:var(--azul); margin-bottom:8px;}
+  .export-opcoes label{display:flex; align-items:center; gap:7px; font-size:12.5px; color:#334155; padding:3px 0; cursor:pointer;}
+  .export-opcoes input[type=checkbox]{cursor:pointer;}
+  .btn-exportar-gerar{
+    width:100%; margin-top:10px; background:var(--azul); color:#fff; border:none;
+    border-radius:7px; padding:8px 10px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;
+  }
+  .btn-exportar-gerar:hover{background:var(--azul-claro);}
+  .btn-exportar-gerar:disabled{opacity:.6; cursor:wait;}
+
+  /* Enquanto a captura roda: esconde tudo que é UI (botões, popover, dica) e
+     as seções desmarcadas — só o conteúdo escolhido entra na imagem. Também
+     tira o overlay do position:fixed (preso à altura da tela) pra virar
+     position:absolute com altura automática — senão a imagem sai cortada no
+     tamanho da janela, perdendo os cards que estariam abaixo da rolagem. */
+  #dashboard-overlay.exportando{
+    position:absolute !important; inset:auto !important; top:0 !important; left:0 !important;
+    width:100% !important; height:auto !important;
+  }
+  #dashboard-overlay.exportando .nao-exportar{display:none !important;}
+  #dashboard-overlay.exportando [data-secao].oculta-export{display:none !important;}
+  #dashboard-overlay.exportando .dash-corpo{overflow:visible !important; height:auto !important; flex:none !important;}
+
+  @media (max-width: 1100px){
+    .dash-kpis{grid-template-columns:repeat(3, 1fr);}
+    .dash-graficos{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="painel">
+    <header>
+      <div class="cabeca-topo">
+        <div class="logos">
+          <img src="logo/LOGO RTA.png" alt="RTA">
+          <img src="logo/LOGO MSI.jpeg" alt="MSI">
+        </div>
+        <div>
+          <h1>Ordens de Serviço</h1>
+          <small>RTA Engenheiros Consultores + MSI Engenharia</small>
+        </div>
+      </div>
+      <button class="btn-header" id="btn-painel-executivo" title="Abrir painel de apresentação com KPIs e gráficos">📊 Painel Executivo</button>
+    </header>
+    <div class="conteudo" id="painel-os">
+      <div class="kpis-grade">
+        <div class="kpi-mini"><b id="os-total">—</b><span>O.S.P. cadastradas</span></div>
+        <div class="kpi-mini"><b id="os-concluidas">—</b><span>concluídas</span></div>
+        <div class="kpi-mini"><b id="os-valor">—</b><span>previsto</span></div>
+      </div>
+
+      <button class="btn-filtros" id="btn-filtros" type="button">
+        <span class="rotulo-filtros">🔎 Filtros</span>
+        <span class="filtros-resumo" id="filtros-resumo">todas as O.S.P.</span>
+        <span class="filtros-seta">▾</span>
+      </button>
+      <div class="filtros-corpo" id="filtros-corpo">
+        <label class="rotulo">Situação</label>
+        <div id="os-pills" class="pills-situacao"></div>
+
+        <label class="rotulo" style="margin-top:10px;">Tipo de serviço</label>
+        <select id="os-sel-tipo">
+          <option value="">Todas</option>
+          <option value="manutencao">Manutenção</option>
+          <option value="restauracao">Restauração</option>
+        </select>
+
+        <label class="rotulo">Região</label>
+        <select id="os-sel-regiao"><option value="">Todas</option></select>
+
+        <label class="rotulo">Contrato</label>
+        <select id="os-sel-contrato"><option value="">Todos</option></select>
+      </div>
+
+      <label class="rotulo" style="margin-top:14px;">Relação das O.S.P.</label>
+      <div id="os-lista"></div>
+
+      <div class="dica">
+        Vem da planilha de Controle de O.S.P. (<code>fichas/OS/*.xlsm</code>, uma
+        linha por O.S.P.+trecho, convertida por <code>converter_os.py</code>).
+        Clique numa O.S.P. da relação pra ver o trecho no mapa. Região de
+        restauração (14/15/16...) é mostrada na mesma área geográfica da
+        região de manutenção correspondente (1/2/3...) — é o mesmo trecho
+        físico, contrato diferente.
+      </div>
+    </div>
+  </div>
+  <div id="map"></div>
+  <div id="drawer">
+    <div class="cabeca-drawer">
+      <div>
+        <h2 id="drawer-titulo">—</h2>
+        <small id="drawer-subtitulo"></small>
+      </div>
+      <button class="fechar" id="drawer-fechar" title="Fechar">✕</button>
+    </div>
+    <div class="corpo-drawer" id="drawer-corpo"></div>
+  </div>
+
+  <div id="dashboard-overlay">
+    <div class="dash-cabeca">
+      <div class="logos">
+        <!-- Embutidas em base64 (não como arquivo separado) porque o
+             html-to-image, ao exportar a imagem do painel, tenta rebaixar
+             cada <img> via fetch() pra incluir na captura — e fetch() de
+             arquivo local (file://, quando a usuária abre o HTML direto,
+             sem servidor) é bloqueado pelo navegador. Com data: URI não tem
+             o que buscar, então nunca falha, em file:// ou http://. -->
+        <img src="data:image/png;base64,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" alt="RTA">
+        <img src="data:image/jpeg;base64,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" alt="MSI">
+      </div>
+      <div>
+        <h1>Painel Executivo — Ordens de Serviço</h1>
+        <small id="dash-subtitulo">—</small>
+      </div>
+      <div class="dash-acoes nao-exportar">
+        <button id="dash-exportar" title="Baixar imagem pronta pra colar no relatório">📄 Exportar</button>
+        <button id="dash-fullscreen" title="Tela cheia (apresentação)">⛶ Tela cheia</button>
+        <button id="dash-fechar" title="Fechar">✕ Fechar</button>
+      </div>
+    </div>
+
+    <div id="export-opcoes" class="export-opcoes nao-exportar">
+      <div class="export-opcoes-titulo">O que entra na imagem?</div>
+      <label><input type="checkbox" data-secao="kpis" checked> KPIs</label>
+      <label><input type="checkbox" data-secao="situacao" checked> Situação das O.S.P.</label>
+      <label><input type="checkbox" data-secao="regiao" checked> Previsto × executado por região</label>
+      <label><input type="checkbox" data-secao="evolucao" checked> Evolução mensal</label>
+      <label><input type="checkbox" data-secao="ranking" checked> Ranking Top 10</label>
+      <button id="export-gerar" class="btn-exportar-gerar">🖼️ Gerar imagem</button>
+    </div>
+
+    <div class="dash-corpo">
+      <div class="dash-kpis" data-secao="kpis">
+        <div class="dash-kpi"><b id="dash-kpi-total">—</b><span>O.S.P. cadastradas</span></div>
+        <div class="dash-kpi"><b id="dash-kpi-concluidas">—</b><span>concluídas</span></div>
+        <div class="dash-kpi"><b id="dash-kpi-previsto">—</b><span>valor previsto</span></div>
+        <div class="dash-kpi"><b id="dash-kpi-executado">—</b><span>valor executado</span></div>
+        <div class="dash-kpi"><b id="dash-kpi-pct">—</b><span>% executado</span></div>
+        <div class="dash-kpi"><b id="dash-kpi-saldo">—</b><span>saldo a executar</span></div>
+      </div>
+      <div class="dash-graficos">
+        <div class="dash-card" data-secao="situacao">
+          <div class="dash-card-cabeca"><h3>Situação das O.S.P.</h3></div>
+          <div class="dash-canvas"><canvas id="chart-situacao"></canvas></div>
+        </div>
+        <div class="dash-card" data-secao="regiao">
+          <div class="dash-card-cabeca"><h3>Previsto × executado por região</h3></div>
+          <div class="dash-canvas"><canvas id="chart-regiao"></canvas></div>
+        </div>
+        <div class="dash-card" data-secao="evolucao">
+          <div class="dash-card-cabeca"><h3>Evolução mensal do valor medido</h3></div>
+          <div class="dash-canvas"><canvas id="chart-evolucao"></canvas></div>
+        </div>
+        <div class="dash-card" data-secao="ranking">
+          <div class="dash-card-cabeca">
+            <h3>Ranking Top 10 por valor previsto</h3>
+            <div class="dash-toggle nao-exportar">
+              <button class="ativo" data-ranking="trecho">Por trecho</button>
+              <button data-ranking="servico">Por serviço</button>
+              <button data-ranking="osp">Por O.S.P.</button>
+            </div>
+          </div>
+          <div class="dash-canvas"><canvas id="chart-ranking"></canvas></div>
+        </div>
+      </div>
+      <div class="dica nao-exportar" style="margin-top:16px;">
+        Os gráficos e KPIs acima respeitam os filtros de Região, Contrato, Tipo de
+        serviço e Situação escolhidos no painel lateral — feche este painel, ajuste
+        o filtro e reabra (ou deixe aberto: ele atualiza sozinho a cada mudança).
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="dados/manifest_os.js"></script>
+<script>
+(function(){
+'use strict';
+
+// Situação da O.S.P. — vocabulário vem da aba "Tabelas Auxiliares" da
+// planilha de controle.
+var CORES_SITUACAO = {
+  'Concluída': '#0ca30c', 'Em andamento': '#2563EB', 'Em elaboração': '#64748B',
+  'Justificada': '#94A3B8', 'Cancelada': '#d03b3b', 'Correção Fiscal': '#7C3AED',
+  'Análise Gestor': '#D97706', 'Não informada': '#94A3B8',
+};
+function corSituacao(s){ return CORES_SITUACAO[s] || '#94A3B8'; }
+// "-" na planilha não é uma situação de verdade (não está na lista oficial
+// da aba "Tabelas Auxiliares") — é só a célula SITUAÇÃO sem preencher ainda.
+// Mostra um texto mais claro pro usuário, mas SÓ na exibição — o valor
+// usado pra filtrar/agrupar continua sendo o "-" cru (senão quebra o filtro
+// já salvo/pill ativa).
+function rotuloSituacao(s){ return s === '-' ? 'Situação não informada' : s; }
+var ICONES_SITUACAO = {
+  'Concluída': '✅', 'Em andamento': '🔧', 'Em elaboração': '✏️',
+  'Justificada': '📄', 'Cancelada': '🚫', 'Correção Fiscal': '💲',
+  'Análise Gestor': '🔎', '-': '❔', 'Não informada': '❔',
+};
+function iconeSituacao(s){ return ICONES_SITUACAO[s] || ''; }
+// Ícone + rótulo prontos pra jogar dentro de um badge/pill.
+function rotuloComIcone(s){ return (iconeSituacao(s)+' '+rotuloSituacao(s)).trim(); }
+function fmtReais(v){ return 'R$ '+v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function rodoviaCurta(nome){
+  if(!nome) return '';
+  return nome.split(' - TRECHO')[0].split(' - trecho')[0];
+}
+
+// "R01"/"R14" (código real da planilha, regiao_os) -> "Região 1"/"Região 14".
+// Usar sempre no lugar do código geográfico agrupado (props.regiao, que junta
+// manutenção e restauração da mesma área física num "R1" só) em qualquer
+// exibição/agrupamento por região.
+function rotuloRegiao(regiaoOs){
+  return regiaoOs ? 'Região '+parseInt(regiaoOs.slice(1), 10) : '—';
+}
+
+// ---------------------------------------------------------------------
+// Mapa base
+// ---------------------------------------------------------------------
+var map = L.map('map', {zoomControl:true}).setView([-10.3, -48.3], 7);
+
+var baseClaro = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution:'&copy; OpenStreetMap, &copy; CARTO', maxZoom:19,
+}).addTo(map);
+var baseSatelite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  attribution:'Esri, Maxar, Earthstar Geographics', maxZoom:19,
+});
+L.control.layers({'Padrão': baseClaro, 'Satélite': baseSatelite}, null, {position:'bottomleft'}).addTo(map);
+L.control.scale({imperial:false, position:'bottomright'}).addTo(map);
+
+var MANIFEST_OS = window.MANIFEST_OS || [];
+var arquivosOsCarregados = {};
+var camadasDestaque = []; // casing + linha da O.S.P. em destaque (ao clicar uma específica)
+var camadaGeral = null; // TODOS os trechos com O.S.P. (respeitando o filtro), coloridos por situação
+
+document.getElementById('drawer-fechar').addEventListener('click', fecharDrawer);
+function fecharDrawer(){
+  document.getElementById('drawer').classList.remove('aberta');
+  camadasDestaque.forEach(function(l){ map.removeLayer(l); });
+  camadasDestaque = [];
+}
+
+// Desenha no mapa TODOS os trechos que têm O.S.P. dentro do filtro atual,
+// coloridos pela cor da situação (mesma paleta de corSituacao usada na lista/
+// pills/badges) — fica sempre visível, sem precisar clicar item por item.
+// Clicar numa linha do mapa abre a mesma gaveta de detalhe do item da lista.
+function renderizarCamadaGeral(entradas, porChave){
+  if(camadaGeral){ map.removeLayer(camadaGeral); camadaGeral = null; }
+  var feats = [];
+  entradas.forEach(function(e){
+    if(e.semGeometria) return;
+    e.feats.forEach(function(f){ if(f.geometry) feats.push(f); });
+  });
+  if(!feats.length) return;
+  camadaGeral = L.geoJSON({type:'FeatureCollection', features: feats}, {
+    style: function(f){ return {color: corSituacao(f.properties.situacao), weight:4, opacity:0.75}; },
+    onEachFeature: function(feature, layer){
+      layer.on('mouseover', function(){ layer.setStyle({weight:6, opacity:1}); });
+      layer.on('mouseout', function(){ camadaGeral.resetStyle(layer); });
+      layer.on('click', function(){
+        var entrada = porChave[chaveOS(feature.properties)];
+        if(entrada) abrirOS(entrada);
+      });
+    },
+  }).addTo(map);
+}
+
+// ---------------------------------------------------------------------
+// Dados — window.DADOS_OS_REGIAO, gerado por converter_os.py a partir da
+// planilha de Controle de O.S.P. Cada feature já vem com a geometria do
+// trecho — uma O.S.P.+trecho pode ter várias features (uma por S.R.E. do
+// trecho), por isso agrupamos por chave antes de listar/contar.
+// ---------------------------------------------------------------------
+function carregarTodosOsRegiao(callback){
+  var pendentes = MANIFEST_OS.filter(function(r){ return !arquivosOsCarregados[r]; });
+  if(pendentes.length === 0){ callback(); return; }
+  var restantes = pendentes.length;
+  pendentes.forEach(function(regiao){
+    var s = document.createElement('script');
+    s.src = 'dados/os_' + regiao + '.js';
+    s.onload = function(){ arquivosOsCarregados[regiao] = true; if(--restantes === 0) callback(); };
+    document.body.appendChild(s);
+  });
+}
+
+function todasFeaturesOS(){
+  var todas = [];
+  Object.keys(window.DADOS_OS_REGIAO || {}).forEach(function(regiao){
+    todas = todas.concat(window.DADOS_OS_REGIAO[regiao].features);
+  });
+  return todas;
+}
+
+function chaveOS(props){ return props.contrato+'|'+props.osp+'|'+props.trecho_num; }
+
+// Uma O.S.P.+trecho pode ter várias features (uma por S.R.E. do trecho) —
+// agrupa pra listar/contar uma vez só, guardando todas as geometrias.
+function entradasUnicasOS(feats){
+  var porChave = {};
+  var ordem = [];
+  feats.forEach(function(f){
+    var k = chaveOS(f.properties);
+    if(!porChave[k]){ porChave[k] = {props: f.properties, feats: []}; ordem.push(k); }
+    porChave[k].feats.push(f);
+  });
+  return ordem.map(function(k){
+    var entrada = porChave[k];
+    // Trecho ainda não cadastrado ou não encontrado no shapefile — a O.S.P.
+    // continua valendo pros KPIs/gráficos, só não desenha no mapa.
+    entrada.semGeometria = entrada.feats.every(function(f){ return !f.geometry; });
+    return entrada;
+  });
+}
+
+var filtrosOsMontados = false;
+var situacaoAtivaOS = '';
+
+// Região usa o código REAL da planilha (regiao_os: "R01".."R13" = manutenção,
+// "R14".."R24" = restauração — mesmo trecho físico, contrato diferente), não o
+// código geográfico agrupado. Repovoa toda vez que o Tipo de serviço muda,
+// mostrando só as regiões daquele tipo que têm O.S.P. na planilha.
+function popularSelectRegiao(){
+  var tipo = document.getElementById('os-sel-tipo').value;
+  var valorAtual = document.getElementById('os-sel-regiao').value;
+  var regioesOs = {};
+  todasFeaturesOS().forEach(function(f){
+    if(tipo && f.properties.tipo_servico !== tipo) return;
+    regioesOs[f.properties.regiao_os] = true;
+  });
+  var sel = document.getElementById('os-sel-regiao');
+  sel.innerHTML = '<option value="">Todas</option>' + Object.keys(regioesOs).sort().map(function(r){
+    return '<option value="'+r+'">'+rotuloRegiao(r)+'</option>';
+  }).join('');
+  // mantém a região escolhida se ela ainda existir pro tipo novo, senão volta a "Todas"
+  sel.value = Array.from(sel.options).some(function(o){ return o.value === valorAtual; }) ? valorAtual : '';
+}
+
+// Contrato também depende de Tipo/Região — um contrato de manutenção não
+// aparece quando o filtro está em Restauração, e vice-versa (mesmo critério
+// do popularSelectRegiao). Repovoa toda vez que Tipo OU Região mudam.
+function popularSelectContrato(){
+  var tipo = document.getElementById('os-sel-tipo').value;
+  var regiaoOs = document.getElementById('os-sel-regiao').value;
+  var valorAtual = document.getElementById('os-sel-contrato').value;
+  var contratos = {};
+  todasFeaturesOS().forEach(function(f){
+    var p = f.properties;
+    if(tipo && p.tipo_servico !== tipo) return;
+    if(regiaoOs && p.regiao_os !== regiaoOs) return;
+    contratos[p.contrato] = true;
+  });
+  var sel = document.getElementById('os-sel-contrato');
+  sel.innerHTML = '<option value="">Todos</option>' + Object.keys(contratos).sort().map(function(c){
+    return '<option value="'+c+'">'+c+'</option>';
+  }).join('');
+  sel.value = Array.from(sel.options).some(function(o){ return o.value === valorAtual; }) ? valorAtual : '';
+}
+
+function montarFiltrosOS(){
+  if(filtrosOsMontados) return;
+  filtrosOsMontados = true;
+  var todas = todasFeaturesOS();
+
+  var situacoes = {};
+  todas.forEach(function(f){ situacoes[f.properties.situacao] = true; });
+
+  popularSelectRegiao();
+  popularSelectContrato();
+  document.getElementById('os-sel-tipo').addEventListener('change', function(){
+    popularSelectRegiao();
+    popularSelectContrato();
+    renderizarListaOS();
+  });
+  document.getElementById('os-sel-regiao').addEventListener('change', function(){
+    popularSelectContrato();
+    renderizarListaOS();
+  });
+  document.getElementById('os-sel-contrato').addEventListener('change', renderizarListaOS);
+
+  var pillsHtml = '<button class="pill-situacao ativa" data-situacao="" style="background:var(--azul)">Todas <span class="n">'+todas.length+'</span></button>';
+  Object.keys(situacoes).sort().forEach(function(s){
+    pillsHtml += '<button class="pill-situacao" data-situacao="'+s+'" style="--cor:'+corSituacao(s)+'">'+rotuloComIcone(s)+'</button>';
+  });
+  document.getElementById('os-pills').innerHTML = pillsHtml;
+  document.querySelectorAll('#os-pills .pill-situacao').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      situacaoAtivaOS = btn.getAttribute('data-situacao');
+      document.querySelectorAll('#os-pills .pill-situacao').forEach(function(b){
+        var ativa = b === btn;
+        b.classList.toggle('ativa', ativa);
+        b.style.background = ativa ? (b.getAttribute('data-situacao') ? corSituacao(b.getAttribute('data-situacao')) : 'var(--azul)') : '#fff';
+        b.style.color = ativa ? '#fff' : '#334155';
+      });
+      renderizarListaOS();
+    });
+  });
+}
+
+function entradasFiltradasOS(){
+  var tipo = document.getElementById('os-sel-tipo').value;
+  var regiaoOs = document.getElementById('os-sel-regiao').value; // "" ou "R14" (código real da planilha)
+  var contrato = document.getElementById('os-sel-contrato').value;
+  var feats = todasFeaturesOS().filter(function(f){
+    var p = f.properties;
+    if(tipo && p.tipo_servico !== tipo) return false;
+    if(regiaoOs && p.regiao_os !== regiaoOs) return false;
+    if(contrato && p.contrato !== contrato) return false;
+    if(situacaoAtivaOS && p.situacao !== situacaoAtivaOS) return false;
+    return true;
+  });
+  return entradasUnicasOS(feats);
+}
+
+// Resumo de uma linha no botão "Filtros" (fechado por padrão) — mostra o que
+// está ativo sem precisar abrir. O gráfico "O.S.P. por situação" saiu daqui
+// (virou redundante com a rosca do Painel Executivo, que já faz esse papel
+// melhor) — era o maior peso do topo do painel antes da lista.
+function atualizarResumoFiltros(){
+  var partes = [];
+  if(situacaoAtivaOS) partes.push(rotuloSituacao(situacaoAtivaOS));
+  var tipo = document.getElementById('os-sel-tipo').value;
+  if(tipo) partes.push(tipo === 'restauracao' ? 'Restauração' : 'Manutenção');
+  var regiaoEl = document.getElementById('os-sel-regiao');
+  if(regiaoEl.value) partes.push(regiaoEl.options[regiaoEl.selectedIndex].textContent);
+  var contrato = document.getElementById('os-sel-contrato').value;
+  if(contrato) partes.push(contrato);
+  document.getElementById('filtros-resumo').textContent = partes.length ? partes.join(' · ') : 'todas as O.S.P.';
+}
+
+document.getElementById('btn-filtros').addEventListener('click', function(){
+  this.classList.toggle('aberto');
+  document.getElementById('filtros-corpo').classList.toggle('aberto');
+});
+
+function renderizarListaOS(){
+  montarFiltrosOS();
+  var entradas = entradasFiltradasOS();
+  var concluidas = entradas.filter(function(e){ return e.props.situacao === 'Concluída'; }).length;
+  var valor = entradas.reduce(function(s, e){ return s + (e.props.valor_previsto||0); }, 0);
+  document.getElementById('os-total').textContent = entradas.length;
+  document.getElementById('os-concluidas').textContent = concluidas;
+  document.getElementById('os-valor').textContent = fmtReais(valor);
+
+  document.getElementById('os-lista').innerHTML = entradas.map(function(e){
+    var p = e.props;
+    return (
+      '<button class="os-item" data-chave="'+chaveOS(p)+'" style="border-left-color:'+corSituacao(p.situacao)+'">'+
+        '<div class="rodovia">O.S.P. '+p.osp+' — '+rodoviaCurta(p.trecho_nome||'')+(e.semGeometria ? ' <span title="Sem geometria de trecho cadastrada — não aparece no mapa" style="font-size:10px;">📍⚠️</span>' : '')+'</div>'+
+        '<div class="sub">'+p.contrato+' · '+(p.servico||'—')+'</div>'+
+        '<div class="rodape">'+
+          '<span class="badge-situacao" style="background:'+corSituacao(p.situacao)+'">'+rotuloComIcone(p.situacao)+'</span>'+
+          '<span class="valor">'+fmtReais(p.valor_previsto)+'</span>'+
+        '</div>'+
+        '<div class="tag-tipo">'+rotuloRegiao(p.regiao_os)+' · '+(p.tipo_servico === 'restauracao' ? 'Restauração' : 'Manutenção')+'</div>'+
+      '</button>'
+    );
+  }).join('') || '<div class="vazio">Nenhuma O.S.P. encontrada com esses filtros.</div>';
+
+  var porChave = {};
+  entradas.forEach(function(e){ porChave[chaveOS(e.props)] = e; });
+  document.querySelectorAll('#os-lista .os-item').forEach(function(btn){
+    btn.addEventListener('click', function(){ abrirOS(porChave[btn.getAttribute('data-chave')]); });
+  });
+  renderizarCamadaGeral(entradas, porChave);
+
+  atualizarResumoFiltros();
+  atualizarDashboard();
+}
+
+// ---------------------------------------------------------------------
+// Painel Executivo — KPIs financeiros + gráficos (Chart.js) para
+// apresentação ao órgão. Usa os MESMOS filtros do painel lateral
+// (entradasFiltradasOS) — reabre/atualiza sozinho quando o filtro muda.
+// ---------------------------------------------------------------------
+var MESES_ORDEM = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+var graficos = {situacao:null, regiao:null, evolucao:null, ranking:null};
+var rankingModoOS = 'trecho';
+
+function destruirGrafico(nome){
+  if(graficos[nome]){ graficos[nome].destroy(); graficos[nome] = null; }
+}
+
+function descricaoFiltrosOS(){
+  var tipo = document.getElementById('os-sel-tipo').value;
+  var tipoTxt = tipo === 'restauracao' ? 'Restauração' : (tipo === 'manutencao' ? 'Manutenção' : 'Manutenção + Restauração');
+  var regiaoEl = document.getElementById('os-sel-regiao');
+  var regiaoTxt = regiaoEl.value ? regiaoEl.options[regiaoEl.selectedIndex].textContent : 'todas as regiões';
+  var contrato = document.getElementById('os-sel-contrato').value || 'todos os contratos';
+  return tipoTxt + ' · ' + regiaoTxt + ' · ' + contrato + ' · ' + (situacaoAtivaOS ? rotuloSituacao(situacaoAtivaOS) : 'todas as situações');
+}
+
+function fmtReaisCompacto(v){
+  // "R$ 2.000k" (juntando separador de milhar com "k") lia fácil como
+  // "R$ 2.000" — troca por "mi" a partir de 1 milhão pra não confundir escala.
+  if(Math.abs(v) >= 1000000) return 'R$ '+(v/1000000).toLocaleString('pt-BR', {maximumFractionDigits:1})+' mi';
+  if(Math.abs(v) >= 1000) return 'R$ '+(v/1000).toLocaleString('pt-BR', {maximumFractionDigits:0})+' mil';
+  return fmtReais(v);
+}
+
+function atualizarDashboard(){
+  var overlay = document.getElementById('dashboard-overlay');
+  if(!overlay.classList.contains('aberto')) return; // só recalcula com o painel aberto
+  var entradas = entradasFiltradasOS();
+
+  document.getElementById('dash-subtitulo').textContent = descricaoFiltrosOS();
+
+  var totalPrevisto = entradas.reduce(function(s,e){ return s + (e.props.valor_previsto||0); }, 0);
+  var totalExecutado = entradas.reduce(function(s,e){ return s + (e.props.valor_executado||0); }, 0);
+  var concluidas = entradas.filter(function(e){ return e.props.situacao === 'Concluída'; }).length;
+  var pct = totalPrevisto > 0 ? (totalExecutado/totalPrevisto*100) : 0;
+
+  document.getElementById('dash-kpi-total').textContent = entradas.length;
+  document.getElementById('dash-kpi-concluidas').textContent = concluidas;
+  document.getElementById('dash-kpi-previsto').textContent = fmtReais(totalPrevisto);
+  document.getElementById('dash-kpi-executado').textContent = fmtReais(totalExecutado);
+  document.getElementById('dash-kpi-pct').textContent = pct.toFixed(1).replace('.', ',')+'%';
+  document.getElementById('dash-kpi-saldo').textContent = fmtReais(Math.max(totalPrevisto - totalExecutado, 0));
+
+  renderGraficoSituacao(entradas);
+  renderGraficoRegiao(entradas);
+  renderGraficoEvolucao(entradas);
+  renderGraficoRanking(entradas);
+}
+
+// Mesmas situações que o gráfico "Distribuição das OSPs por Situação" da
+// planilha original deixa de fora do cálculo (confirmado batendo % contra o
+// gráfico do Excel: 18/16/55/5/6% só fecha excluindo "-" e "Correção Fiscal"
+// do total — com elas dentro dá 17/15/52/5/6%). Continuam contando nos KPIs
+// e na lista, só não entram nesse gráfico específico.
+var SITUACOES_FORA_DO_GRAFICO_SITUACAO = ['-', 'Correção Fiscal'];
+
+function renderGraficoSituacao(entradas){
+  var porSituacao = {};
+  entradas.forEach(function(e){
+    if(SITUACOES_FORA_DO_GRAFICO_SITUACAO.indexOf(e.props.situacao) !== -1) return;
+    porSituacao[e.props.situacao] = (porSituacao[e.props.situacao]||0) + 1;
+  });
+  var chaves = Object.keys(porSituacao).sort(function(a,b){ return porSituacao[b]-porSituacao[a]; });
+  destruirGrafico('situacao');
+  graficos.situacao = new Chart(document.getElementById('chart-situacao'), {
+    type:'doughnut',
+    data:{ labels: chaves.map(rotuloComIcone), datasets:[{
+      data: chaves.map(function(s){ return porSituacao[s]; }),
+      backgroundColor: chaves.map(corSituacao), borderColor:'#fff', borderWidth:2,
+    }] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:11, font:{size:11}}} } },
+  });
+}
+
+function renderGraficoRegiao(entradas){
+  // Agrupa por regiao_os (código REAL da planilha: R01, R14, R02...), não
+  // pelo código geográfico agrupado (e.props.regiao) — senão manutenção e
+  // restauração da mesma área física (ex. R01 manutenção + R14 restauração,
+  // os dois viram "R1") entram somadas na mesma barra.
+  var porRegiao = {};
+  entradas.forEach(function(e){
+    var r = e.props.regiao_os;
+    if(!porRegiao[r]) porRegiao[r] = {previsto:0, executado:0, regiaoGeo:e.props.regiao, tipo:e.props.tipo_servico};
+    porRegiao[r].previsto += e.props.valor_previsto||0;
+    porRegiao[r].executado += e.props.valor_executado||0;
+  });
+  // Ordena por área física e manutenção antes de restauração, pra ficar fácil
+  // comparar as duas barras da mesma região lado a lado (ex. R01, R14, R02...).
+  var chaves = Object.keys(porRegiao).sort(function(a, b){
+    var pa = porRegiao[a], pb = porRegiao[b];
+    if(pa.regiaoGeo !== pb.regiaoGeo) return pa.regiaoGeo.localeCompare(pb.regiaoGeo, undefined, {numeric:true});
+    return pa.tipo === 'manutencao' ? -1 : 1;
+  });
+  var labels = chaves.map(rotuloRegiao);
+  destruirGrafico('regiao');
+  graficos.regiao = new Chart(document.getElementById('chart-regiao'), {
+    type:'bar',
+    data:{ labels: labels, datasets:[
+      {label:'Previsto', data: chaves.map(function(r){ return porRegiao[r].previsto; }), backgroundColor:'#2563EB', borderRadius:4},
+      {label:'Executado', data: chaves.map(function(r){ return porRegiao[r].executado; }), backgroundColor:'#D97706', borderRadius:4},
+    ] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ y:{ ticks:{ callback: fmtReaisCompacto } } },
+      plugins:{ legend:{position:'bottom'},
+        tooltip:{ callbacks:{ label:function(ctx){ return ctx.dataset.label+': '+fmtReais(ctx.raw); } } } } },
+  });
+}
+
+function renderGraficoEvolucao(entradas){
+  var somaMes = {}; MESES_ORDEM.forEach(function(m){ somaMes[m] = 0; });
+  entradas.forEach(function(e){
+    (e.props.medido_mensal||[]).forEach(function(m){ somaMes[m.mes] = (somaMes[m.mes]||0) + (m.valor||0); });
+  });
+  var acumulado = 0;
+  var dadosAcumulado = MESES_ORDEM.map(function(m){ acumulado += somaMes[m]; return acumulado; });
+  destruirGrafico('evolucao');
+  graficos.evolucao = new Chart(document.getElementById('chart-evolucao'), {
+    type:'line',
+    data:{ labels: MESES_ORDEM, datasets:[
+      {label:'Medido no mês', data: MESES_ORDEM.map(function(m){ return somaMes[m]; }),
+       borderColor:'#2563EB', backgroundColor:'rgba(37,99,235,.15)', tension:.25, fill:true},
+      {label:'Acumulado', data: dadosAcumulado,
+       borderColor:'#D97706', backgroundColor:'transparent', borderDash:[5,3], tension:.25},
+    ] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ y:{ ticks:{ callback: fmtReaisCompacto } } },
+      plugins:{ legend:{position:'bottom'},
+        tooltip:{ callbacks:{ label:function(ctx){ return ctx.dataset.label+': '+fmtReais(ctx.raw); } } } } },
+  });
+}
+
+function renderGraficoRanking(entradas){
+  var labels, valores;
+  if(rankingModoOS === 'osp'){
+    // Sem agrupar — cada O.S.P.+trecho já é um registro único. Mesmo critério
+    // da tabela oficial "TOP 10 OSPs POR VALOR PREVISTO" da aba DETALHAMENTO,
+    // que lista O.S.P. individuais (não agregadas por trecho/serviço). Rótulo
+    // no mesmo formato de lá: "<contrato>.<osp com 4 dígitos>".
+    var ordenadas = entradas.slice()
+      .sort(function(a,b){ return (b.props.valor_previsto||0) - (a.props.valor_previsto||0); })
+      .slice(0, 10);
+    labels = ordenadas.map(function(e){ return e.props.contrato+'.'+String(e.props.osp).padStart(4,'0'); });
+    valores = ordenadas.map(function(e){ return e.props.valor_previsto||0; });
+  }else{
+    var porChave = {};
+    entradas.forEach(function(e){
+      var valor = e.props.valor_previsto || 0;
+      var chave;
+      if(rankingModoOS === 'servico'){
+        // Agrupa pela string INTEIRA de servico (ex.: "Roçada / Tapa-Buraco CAE /
+        // Remendo Profundo" conta como UMA categoria própria) — conferido contra
+        // a tabela oficial "TOP 10 SERVIÇOS POR VALOR PREVISTO" da aba
+        // DETALHAMENTO da planilha: ela NÃO separa por serviço individual, trata
+        // cada combinação exata como uma linha só (ex. "Tapa-Buraco CAE / Remendo
+        // Profundo" aparece como 1 categoria com 13 O.S.P., R$ 3.784.620,11).
+        chave = e.props.servico || '—';
+      }else{
+        // Por número do trecho (N° TRECHO da planilha), não pelo nome da
+        // rodovia — vários trechos podem ficar na mesma rodovia com nomes
+        // parecidos, e o número é a chave real usada na planilha/mapa.
+        chave = e.props.trecho_num != null ? 'Trecho '+e.props.trecho_num : 'Sem trecho cadastrado';
+      }
+      porChave[chave] = (porChave[chave]||0) + valor;
+    });
+    labels = Object.keys(porChave).sort(function(a,b){ return porChave[b]-porChave[a]; }).slice(0, 10);
+    valores = labels.map(function(l){ return porChave[l]; });
+  }
+  destruirGrafico('ranking');
+  graficos.ranking = new Chart(document.getElementById('chart-ranking'), {
+    type:'bar',
+    data:{ labels: labels, datasets:[{ data: valores, backgroundColor:'#1E3A72', borderRadius:4 }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      scales:{ x:{ ticks:{ callback: fmtReaisCompacto } } },
+      plugins:{ legend:{display:false},
+        tooltip:{ callbacks:{ label:function(ctx){ return fmtReais(ctx.raw); } } } } },
+  });
+}
+
+document.querySelectorAll('.dash-toggle button').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    rankingModoOS = btn.getAttribute('data-ranking');
+    document.querySelectorAll('.dash-toggle button').forEach(function(b){ b.classList.toggle('ativo', b === btn); });
+    renderGraficoRanking(entradasFiltradasOS());
+  });
+});
+
+document.getElementById('btn-painel-executivo').addEventListener('click', function(){
+  document.getElementById('dashboard-overlay').classList.add('aberto');
+  atualizarDashboard();
+});
+document.getElementById('dash-fechar').addEventListener('click', function(){
+  if(document.fullscreenElement) document.exitFullscreen();
+  document.getElementById('dashboard-overlay').classList.remove('aberto');
+});
+document.getElementById('dash-fullscreen').addEventListener('click', function(){
+  var el = document.getElementById('dashboard-overlay');
+  if(!document.fullscreenElement) el.requestFullscreen().catch(function(){});
+  else document.exitFullscreen();
+});
+
+// ---------------------------------------------------------------------
+// Exportar imagem do Painel Executivo — pro relatório. Usuária escolhe
+// quais seções entram (KPIs/Situação/Região/Evolução/Ranking); gera um PNG
+// só com o conteúdo marcado, sem os botões/dica da interface. Mesma técnica
+// (html-to-image, carregada sob demanda) já usada com sucesso no geoportal
+// de Levantamento (prancha PNG) — ver [[geoportal-levantamento]].
+// ---------------------------------------------------------------------
+var htmlToImageCarregado = false;
+function carregarHtmlToImage(){
+  if(htmlToImageCarregado) return Promise.resolve();
+  return new Promise(function(resolve, reject){
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js';
+    s.onload = function(){ htmlToImageCarregado = true; resolve(); };
+    s.onerror = function(){ reject(new Error('Falha ao carregar html-to-image (sem internet?)')); };
+    document.body.appendChild(s);
+  });
+}
+
+document.getElementById('dash-exportar').addEventListener('click', function(){
+  document.getElementById('export-opcoes').classList.toggle('aberto');
+});
+
+document.getElementById('export-gerar').addEventListener('click', async function(){
+  var botao = this;
+  var overlay = document.getElementById('dashboard-overlay');
+  var corpo = overlay.querySelector('.dash-corpo');
+  var textoOriginal = botao.textContent;
+  botao.disabled = true;
+  botao.textContent = 'Gerando...';
+  try{
+    await carregarHtmlToImage();
+
+    // Esconde as seções desmarcadas + tudo que é interface (via .exportando).
+    var secoesEscolhidas = {};
+    document.querySelectorAll('#export-opcoes input[type=checkbox]').forEach(function(chk){
+      secoesEscolhidas[chk.getAttribute('data-secao')] = chk.checked;
+    });
+    document.querySelectorAll('[data-secao]').forEach(function(el){
+      el.classList.toggle('oculta-export', secoesEscolhidas[el.getAttribute('data-secao')] === false);
+    });
+    document.getElementById('export-opcoes').classList.remove('aberto');
+    overlay.classList.add('exportando');
+    // deixa o layout assentar (corpo sem scroll, seções escondidas) antes de capturar
+    await new Promise(function(r){ setTimeout(r, 80); });
+
+    var dataUrl = await htmlToImage.toPng(overlay, {
+      backgroundColor:'#F1F5F9', pixelRatio:2,
+      // fontEmbedCSS:'' pula a varredura automática de @font-face em TODAS as
+      // folhas de estilo da página (inclusive a do Leaflet, que vem de CDN
+      // externo) — essa varredura é o que dá erro de CORS ao tentar ler
+      // cssRules de uma stylesheet de outro domínio. Não usamos fonte
+      // customizada (só system-ui/Segoe UI), então não precisamos dela.
+      fontEmbedCSS: '',
+    });
+    var a = document.createElement('a');
+    var agora = new Date();
+    var data = agora.getFullYear()+'-'+String(agora.getMonth()+1).padStart(2,'0')+'-'+String(agora.getDate()).padStart(2,'0');
+    a.href = dataUrl;
+    a.download = 'painel-executivo-ordens-servico-'+data+'.png';
+    a.click();
+  }catch(e){
+    console.error('Falha ao exportar imagem do Painel Executivo:', e);
+    var msg = (e && (e.message || (e.toString && e.toString() !== '[object Object]' && e.toString()))) || 'erro desconhecido — veja o console (F12) pra detalhes';
+    alert('Não consegui gerar a imagem: '+msg);
+  }finally{
+    overlay.classList.remove('exportando');
+    document.querySelectorAll('[data-secao]').forEach(function(el){ el.classList.remove('oculta-export'); });
+    botao.disabled = false;
+    botao.textContent = textoOriginal;
+  }
+});
+
+// Bloco de O.S.P. — conteúdo da gaveta ao clicar num item da lista.
+function blocoOS(props, semGeometria){
+  var cor = corSituacao(props.situacao);
+  return (
+    '<div class="bloco-os">'+
+      '<h4>🧾 O.S.P. '+props.osp+' <span class="badge-situacao" style="background:'+cor+'">'+rotuloComIcone(props.situacao)+'</span></h4>'+
+      '<div class="linha"><span class="rot">Contrato</span><span class="val">'+props.contrato+'</span></div>'+
+      '<div class="linha"><span class="rot">Trecho</span><span class="val">'+(props.trecho_nome||'—')+'</span></div>'+
+      '<div class="linha"><span class="rot">Serviço</span><span class="val">'+(props.servico||'—')+'</span></div>'+
+      '<div class="linha"><span class="rot">Emissão</span><span class="val">'+(props.data_emissao||'—')+' · '+(props.cronograma||'—')+'</span></div>'+
+      '<div class="linha"><span class="rot">Tipo</span><span class="val">'+(props.tipo_servico === 'restauracao' ? 'Restauração' : 'Manutenção')+' ('+props.regiao_os+')</span></div>'+
+      '<div class="total"><span>Valor previsto</span><b>'+fmtReais(props.valor_previsto)+'</b></div>'+
+      (props.observacao ? '<div style="margin-top:6px; font-size:11px; color:#78350F;">'+props.observacao+'</div>' : '')+
+      (semGeometria ? '<div style="margin-top:6px; font-size:11px; color:#78350F;">📍 Sem geometria de trecho cadastrada — entra nos totais/KPIs, mas não é possível desenhar no mapa.</div>' : '')+
+    '</div>'
+  );
+}
+
+// Abre a O.S.P. na gaveta (mapa em destaque + cartão de detalhe). Uma O.S.P.
+// pode não ter geometria (trecho ainda não cadastrado, ou não encontrado no
+// shapefile) — mostra só o cartão nesse caso, sem tentar desenhar no mapa.
+function abrirOS(entrada){
+  camadasDestaque.forEach(function(l){ map.removeLayer(l); });
+  camadasDestaque = [];
+  if(!entrada.semGeometria){
+    var geom = {type:'FeatureCollection', features: entrada.feats};
+    var casing = L.geoJSON(geom, {style:{color:'#ffffff', weight:9, opacity:0.95}, interactive:false}).addTo(map);
+    var linha = L.geoJSON(geom, {style:{color: corSituacao(entrada.props.situacao), weight:5, opacity:1}}).addTo(map);
+    camadasDestaque = [casing, linha];
+    var b = linha.getBounds();
+    if(b.isValid()) map.fitBounds(b, {padding:[40,40], maxZoom:14});
+  }
+
+  var p = entrada.props;
+  document.getElementById('drawer-titulo').textContent = 'O.S.P. '+p.osp+' — '+rodoviaCurta(p.trecho_nome||'');
+  document.getElementById('drawer-subtitulo').textContent =
+    p.contrato+' · '+rotuloRegiao(p.regiao_os)+' · '+(p.tipo_servico === 'restauracao' ? 'Restauração' : 'Manutenção');
+  document.getElementById('drawer-corpo').innerHTML = blocoOS(p, entrada.semGeometria);
+  document.getElementById('drawer').classList.add('aberta');
+}
+
+// ---------------------------------------------------------------------
+// Início
+// ---------------------------------------------------------------------
+if(MANIFEST_OS.length === 0){
+  document.getElementById('painel-os').innerHTML = '<div class="vazio">Nenhuma O.S.P. convertida ainda. Rode <code>python converter_os.py</code> depois de colocar a planilha em fichas/OS/.</div>';
+}else{
+  carregarTodosOsRegiao(renderizarListaOS);
+}
+
+})();
+</script>
+</body>
+</html>
