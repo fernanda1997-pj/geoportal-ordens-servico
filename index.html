@@ -225,6 +225,15 @@
   #dashboard-overlay.exportando .nao-exportar{display:none !important;}
   #dashboard-overlay.exportando [data-secao].oculta-export{display:none !important;}
   #dashboard-overlay.exportando .dash-corpo{overflow:visible !important; height:auto !important; flex:none !important;}
+  /* Se só 1 (ou poucos) gráfico ficar marcado no popover de exportar, o grid
+     fixo de 2 colunas deixava metade da imagem em branco (o card sozinho só
+     ocupava a 1ª coluna). O número de colunas certo (1 quando sobra só 1
+     card, 2 quando sobram 2+) é calculado em JS e aplicado como variável
+     abaixo — não dá pra usar auto-fit puro aqui porque ele preenche quantas
+     colunas couberem na largura (4 gráficos viravam uma fileira só, muito
+     espremida, em vez do 2×2 original).
+   */
+  #dashboard-overlay.exportando .dash-graficos{grid-template-columns:repeat(var(--colunas-export, 2), 1fr) !important;}
 
   @media (max-width: 1100px){
     .dash-kpis{grid-template-columns:repeat(3, 1fr);}
@@ -1018,6 +1027,13 @@ document.getElementById('export-gerar').addEventListener('click', async function
       el.classList.toggle('oculta-export', secoesEscolhidas[el.getAttribute('data-secao')] === false);
     });
     document.getElementById('export-opcoes').classList.remove('aberto');
+
+    // Quantos cards de gráfico sobraram visíveis — no máximo 2 colunas (igual
+    // o normal), mas 1 coluna se só sobrou 1 gráfico marcado (senão ele fica
+    // espremido numa metade da imagem, com a outra metade em branco).
+    var graficosVisiveis = document.querySelectorAll('.dash-graficos > [data-secao]:not(.oculta-export)').length;
+    document.querySelector('.dash-graficos').style.setProperty('--colunas-export', Math.max(1, Math.min(2, graficosVisiveis)));
+
     overlay.classList.add('exportando');
     // deixa o layout assentar (corpo sem scroll, seções escondidas) antes de capturar
     await new Promise(function(r){ setTimeout(r, 80); });
@@ -1044,6 +1060,7 @@ document.getElementById('export-gerar').addEventListener('click', async function
   }finally{
     overlay.classList.remove('exportando');
     document.querySelectorAll('[data-secao]').forEach(function(el){ el.classList.remove('oculta-export'); });
+    document.querySelector('.dash-graficos').style.removeProperty('--colunas-export');
     botao.disabled = false;
     botao.textContent = textoOriginal;
   }
