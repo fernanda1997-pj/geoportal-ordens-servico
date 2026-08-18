@@ -1049,6 +1049,14 @@ document.getElementById('export-gerar').addEventListener('click', async function
     overlay.classList.add('exportando');
     // deixa o layout assentar (corpo sem scroll, seções escondidas) antes de capturar
     await new Promise(function(r){ setTimeout(r, 80); });
+    // Chart.js só redesenha o canvas no tamanho novo via ResizeObserver, que é
+    // assíncrono — sem isso o gráfico ficava com o desenho "congelado" no
+    // tamanho ANTIGO (largo) e cortado dentro do container agora estreito.
+    // .resize() força o recálculo na hora, síncrono.
+    Object.keys(graficos).forEach(function(nome){
+      if(graficos[nome]) graficos[nome].resize();
+    });
+    await new Promise(function(r){ setTimeout(r, 80); });
 
     var dataUrl = await htmlToImage.toPng(overlay, {
       backgroundColor:'#F1F5F9', pixelRatio:2,
