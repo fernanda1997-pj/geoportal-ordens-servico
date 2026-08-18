@@ -526,7 +526,9 @@ function entradasUnicasOS(feats){
 }
 
 var filtrosOsMontados = false;
-var situacaoAtivaOS = '';
+// Multi-seleção — pode escolher "Concluída" + "Em andamento" ao mesmo tempo,
+// por exemplo. Vazio = "Todas" (nenhum filtro de situação).
+var situacoesAtivasOS = new Set();
 // Mês de emissão da O.S.P. (campo DATA EMISSÃO da planilha, já vem por extenso:
 // "Janeiro", "Fevereiro"...) — filtra a lista/mapa igual Região/Tipo/Contrato.
 var mesAtivoOS = '';
@@ -631,15 +633,27 @@ function montarFiltrosOS(){
   document.getElementById('os-pills').innerHTML = pillsHtml;
   document.querySelectorAll('#os-pills .pill-situacao').forEach(function(btn){
     btn.addEventListener('click', function(){
-      situacaoAtivaOS = btn.getAttribute('data-situacao');
-      document.querySelectorAll('#os-pills .pill-situacao').forEach(function(b){
-        var ativa = b === btn;
-        b.classList.toggle('ativa', ativa);
-        b.style.background = ativa ? (b.getAttribute('data-situacao') ? corSituacao(b.getAttribute('data-situacao')) : 'var(--azul)') : '#fff';
-        b.style.color = ativa ? '#fff' : '#334155';
-      });
+      var s = btn.getAttribute('data-situacao');
+      if(s === ''){
+        situacoesAtivasOS.clear(); // "Todas" limpa a seleção
+      }else{
+        if(situacoesAtivasOS.has(s)) situacoesAtivasOS.delete(s);
+        else situacoesAtivasOS.add(s);
+      }
+      atualizarVisualPillsSituacao();
       renderizarListaOS();
     });
+  });
+  atualizarVisualPillsSituacao();
+}
+
+function atualizarVisualPillsSituacao(){
+  document.querySelectorAll('#os-pills .pill-situacao').forEach(function(b){
+    var s = b.getAttribute('data-situacao');
+    var ativa = s === '' ? situacoesAtivasOS.size === 0 : situacoesAtivasOS.has(s);
+    b.classList.toggle('ativa', ativa);
+    b.style.background = ativa ? (s ? corSituacao(s) : 'var(--azul)') : '#fff';
+    b.style.color = ativa ? '#fff' : '#334155';
   });
 }
 
@@ -652,7 +666,7 @@ function entradasFiltradasOS(){
     if(tipo && p.tipo_servico !== tipo) return false;
     if(regiaoOs && p.regiao_os !== regiaoOs) return false;
     if(contrato && p.contrato !== contrato) return false;
-    if(situacaoAtivaOS && p.situacao !== situacaoAtivaOS) return false;
+    if(situacoesAtivasOS.size && !situacoesAtivasOS.has(p.situacao)) return false;
     if(mesAtivoOS && p.data_emissao !== mesAtivoOS) return false;
     return true;
   });
@@ -665,7 +679,7 @@ function entradasFiltradasOS(){
 // melhor) — era o maior peso do topo do painel antes da lista.
 function atualizarResumoFiltros(){
   var partes = [];
-  if(situacaoAtivaOS) partes.push(rotuloSituacao(situacaoAtivaOS));
+  if(situacoesAtivasOS.size) partes.push(Array.from(situacoesAtivasOS).map(rotuloSituacao).join(' + '));
   var tipo = document.getElementById('os-sel-tipo').value;
   if(tipo) partes.push(tipo === 'restauracao' ? 'Restauração' : 'Manutenção');
   var regiaoEl = document.getElementById('os-sel-regiao');
@@ -735,7 +749,8 @@ function descricaoFiltrosOS(){
   var regiaoEl = document.getElementById('os-sel-regiao');
   var regiaoTxt = regiaoEl.value ? regiaoEl.options[regiaoEl.selectedIndex].textContent : 'todas as regiões';
   var contrato = document.getElementById('os-sel-contrato').value || 'todos os contratos';
-  var base = tipoTxt + ' · ' + regiaoTxt + ' · ' + contrato + ' · ' + (situacaoAtivaOS ? rotuloSituacao(situacaoAtivaOS) : 'todas as situações');
+  var situacaoTxt = situacoesAtivasOS.size ? Array.from(situacoesAtivasOS).map(rotuloSituacao).join(' + ') : 'todas as situações';
+  var base = tipoTxt + ' · ' + regiaoTxt + ' · ' + contrato + ' · ' + situacaoTxt;
   return mesAtivoOS ? base + ' · ' + mesAtivoOS : base;
 }
 
