@@ -173,6 +173,7 @@
   #dashboard-overlay .dash-corpo{flex:1; overflow:auto; padding:18px 22px 26px;}
 
   .dash-kpis{display:grid; grid-template-columns:repeat(6, 1fr); gap:12px; margin-bottom:18px;}
+  .dash-kpis.com-mes{grid-template-columns:repeat(4, 1fr);}
   .dash-kpi{
     background:#fff; border:1px solid var(--borda); border-radius:10px; padding:12px 10px;
     text-align:center; box-shadow:0 1px 3px rgba(0,0,0,.04);
@@ -346,6 +347,8 @@
         <div class="dash-kpi"><b id="dash-kpi-executado">—</b><span>valor executado</span></div>
         <div class="dash-kpi"><b id="dash-kpi-pct">—</b><span>% executado</span></div>
         <div class="dash-kpi"><b id="dash-kpi-saldo">—</b><span>saldo a executar</span></div>
+        <div class="dash-kpi kpi-mes" id="kpi-mes-valor" style="display:none;"><b id="dash-kpi-mes-valor">—</b><span id="dash-kpi-mes-valor-label">executado no mês</span></div>
+        <div class="dash-kpi kpi-mes" id="kpi-mes-acumulado" style="display:none;"><b id="dash-kpi-mes-acumulado">—</b><span id="dash-kpi-mes-acumulado-label">acumulado até o mês</span></div>
       </div>
       <div class="dash-graficos">
         <div class="dash-card" data-secao="situacao">
@@ -536,12 +539,19 @@ function popularSelectMes(){
   var valorAtual = document.getElementById('os-sel-mes').value;
   var meses = {};
   todasFeaturesOS().forEach(function(f){
-    var m = f.properties.data_emissao;
+    var m = f.properties.data_emissao; // "Julho/2025" — mês por extenso + ano do contrato
     if(m && m !== '-') meses[m] = true;
   });
+  // Ordena por ano, depois pela ordem do calendário (não alfabética — senão
+  // "Agosto/2026" viria antes de "Julho/2025", por exemplo).
+  var chaves = Object.keys(meses).sort(function(a, b){
+    var pa = a.split('/'), pb = b.split('/');
+    var anoA = pa[1], anoB = pb[1];
+    if(anoA !== anoB) return anoA.localeCompare(anoB);
+    return ORDEM_MESES_COMPLETA.indexOf(pa[0]) - ORDEM_MESES_COMPLETA.indexOf(pb[0]);
+  });
   var sel = document.getElementById('os-sel-mes');
-  sel.innerHTML = '<option value="">Todos os meses</option>' + ORDEM_MESES_COMPLETA
-    .filter(function(m){ return meses[m]; })
+  sel.innerHTML = '<option value="">Todos os meses</option>' + chaves
     .map(function(m){ return '<option value="'+m+'">'+m+'</option>'; })
     .join('');
   sel.value = Array.from(sel.options).some(function(o){ return o.value === valorAtual; }) ? valorAtual : '';
@@ -737,6 +747,41 @@ function fmtReaisCompacto(v){
   return fmtReais(v);
 }
 
+// "Executado no mês" e "acumulado até o mês", dentro do conjunto de O.S.P. já
+// filtrado (entradas) — soma medido_mensal (série da aba HISTÓRICO, sempre
+// Jan..Dez, sem ano) até o MÊS escolhido no filtro "Mês de emissão" (o ano da
+// seleção não entra aqui, só o mês — cada O.S.P. tem sua própria linha do
+// tempo de medição). Some os 2 KPIs quando "Todos os meses" está selecionado.
+function atualizarKpisMes(entradas){
+  var tileValor = document.getElementById('kpi-mes-valor');
+  var tileAcumulado = document.getElementById('kpi-mes-acumulado');
+  var grade = document.querySelector('.dash-kpis');
+  if(!mesAtivoOS){
+    tileValor.style.display = 'none';
+    tileAcumulado.style.display = 'none';
+    grade.classList.remove('com-mes');
+    return;
+  }
+  grade.classList.add('com-mes');
+  var mesNome = mesAtivoOS.split('/')[0];
+  var idxMes = ORDEM_MESES_COMPLETA.indexOf(mesNome);
+  var noMes = 0, acumulado = 0;
+  entradas.forEach(function(e){
+    var serie = e.props.medido_mensal || [];
+    serie.forEach(function(m, i){
+      if(i > idxMes) return;
+      if(i === idxMes) noMes += m.valor || 0;
+      acumulado += m.valor || 0;
+    });
+  });
+  document.getElementById('dash-kpi-mes-valor').textContent = fmtReais(noMes);
+  document.getElementById('dash-kpi-mes-valor-label').textContent = 'executado em '+mesAtivoOS;
+  document.getElementById('dash-kpi-mes-acumulado').textContent = fmtReais(acumulado);
+  document.getElementById('dash-kpi-mes-acumulado-label').textContent = 'acumulado até '+mesAtivoOS;
+  tileValor.style.display = '';
+  tileAcumulado.style.display = '';
+}
+
 function atualizarDashboard(){
   var overlay = document.getElementById('dashboard-overlay');
   if(!overlay.classList.contains('aberto')) return; // só recalcula com o painel aberto
@@ -755,6 +800,8 @@ function atualizarDashboard(){
   document.getElementById('dash-kpi-executado').textContent = fmtReais(totalExecutado);
   document.getElementById('dash-kpi-pct').textContent = pct.toFixed(1).replace('.', ',')+'%';
   document.getElementById('dash-kpi-saldo').textContent = fmtReais(Math.max(totalPrevisto - totalExecutado, 0));
+
+  atualizarKpisMes(entradas);
 
   renderGraficoSituacao(entradas);
   renderGraficoRegiao(entradas);

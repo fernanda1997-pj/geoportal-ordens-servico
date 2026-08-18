@@ -247,13 +247,27 @@ def parse_planilha_os(caminho):
                        f'no shapefile R{regiao_geo}_TRECHOS.shp — mantido na lista/KPIs, sem geometria no mapa')
                     n_sem_geometria += 1
 
+            contrato = valor(r, 'CONTRATO')
+            # A planilha só guarda o MÊS na "DATA EMISSÃO" ("Janeiro", sem ano) —
+            # e o mesmo mês se repete em contratos de anos diferentes (ex.: R03
+            # tem "Julho" tanto no contrato 002.2025 quanto no 1452.2026). O
+            # número do contrato sempre termina em ".AAAA" — usa isso como ano de
+            # emissão (o contrato dura ~1 ano, então o mês só pode ser daquele
+            # ano). Vira "Julho/2025" em vez de só "Julho", pra não misturar anos.
+            mes_emissao = valor(r, 'DATA EMISSAO')
+            m_ano = re.search(r'(\d{4})\s*$', str(contrato or ''))
+            if mes_emissao and mes_emissao != '-' and m_ano:
+                data_emissao = f'{mes_emissao}/{m_ano.group(1)}'
+            else:
+                data_emissao = mes_emissao
+
             props = {
                 'regiao': regiao_geo_label,
                 'regiao_os': f'R{regiao_num_planilha:02d}',
                 'tipo_servico': tipo_servico,
-                'contrato': valor(r, 'CONTRATO'),
+                'contrato': contrato,
                 'osp': osp,
-                'data_emissao': valor(r, 'DATA EMISSAO'),
+                'data_emissao': data_emissao,
                 'cronograma': valor(r, 'CRONOGRAMA'),
                 'trecho_num': trecho_num,
                 'trecho_nome': trecho_nome,
