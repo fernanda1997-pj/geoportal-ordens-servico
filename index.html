@@ -1048,7 +1048,7 @@ document.getElementById('export-gerar').addEventListener('click', async function
 
     overlay.classList.add('exportando');
     // deixa o layout assentar (corpo sem scroll, seções escondidas) antes de capturar
-    await new Promise(function(r){ setTimeout(r, 80); });
+    await new Promise(function(r){ setTimeout(r, 150); });
     // Chart.js só redesenha o canvas no tamanho novo via ResizeObserver, que é
     // assíncrono — sem isso o gráfico ficava com o desenho "congelado" no
     // tamanho ANTIGO (largo) e cortado dentro do container agora estreito.
@@ -1056,10 +1056,16 @@ document.getElementById('export-gerar').addEventListener('click', async function
     Object.keys(graficos).forEach(function(nome){
       if(graficos[nome]) graficos[nome].resize();
     });
-    await new Promise(function(r){ setTimeout(r, 80); });
+    await new Promise(function(r){ setTimeout(r, 150); });
+
+    // Mede a largura/altura DEPOIS do layout assentado e passa explícito pro
+    // html-to-image — sem isso ele às vezes mede o tamanho antigo/errado (a
+    // coluna direita do grid saía cortada, mesmo com o CSS já certo).
+    var largura = overlay.scrollWidth;
+    var altura = overlay.scrollHeight;
 
     var dataUrl = await htmlToImage.toPng(overlay, {
-      backgroundColor:'#F1F5F9', pixelRatio:2,
+      backgroundColor:'#F1F5F9', pixelRatio:2, width:largura, height:altura,
       // fontEmbedCSS:'' pula a varredura automática de @font-face em TODAS as
       // folhas de estilo da página (inclusive a do Leaflet, que vem de CDN
       // externo) — essa varredura é o que dá erro de CORS ao tentar ler
