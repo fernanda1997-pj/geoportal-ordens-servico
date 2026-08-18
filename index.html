@@ -220,11 +220,18 @@
      tamanho da janela, perdendo os cards que estariam abaixo da rolagem. */
   #dashboard-overlay.exportando{
     position:absolute !important; inset:auto !important; top:0 !important; left:0 !important;
-    width:100% !important; height:auto !important;
+    /* Largura FIXA (não mais 100% da tela) — calculada em JS conforme quantos
+       gráficos sobraram marcados, senão a imagem saía larga igual o painel
+       inteiro só com um gráfico redondo pequeno no meio (proporção ruim pra
+       colar num Word). */
+    width:var(--largura-export, 1180px) !important; height:auto !important;
   }
   #dashboard-overlay.exportando .nao-exportar{display:none !important;}
   #dashboard-overlay.exportando [data-secao].oculta-export{display:none !important;}
   #dashboard-overlay.exportando .dash-corpo{overflow:visible !important; height:auto !important; flex:none !important;}
+  /* KPIs sempre em 3 colunas na exportação (mesmo breakpoint já usado pra
+     telas estreitas) — 6 numa largura de 1 gráfico só ficaria espremido. */
+  #dashboard-overlay.exportando .dash-kpis{grid-template-columns:repeat(3, 1fr) !important;}
   /* Se só 1 (ou poucos) gráfico ficar marcado no popover de exportar, o grid
      fixo de 2 colunas deixava metade da imagem em branco (o card sozinho só
      ocupava a 1ª coluna). O número de colunas certo (1 quando sobra só 1
@@ -1030,9 +1037,14 @@ document.getElementById('export-gerar').addEventListener('click', async function
 
     // Quantos cards de gráfico sobraram visíveis — no máximo 2 colunas (igual
     // o normal), mas 1 coluna se só sobrou 1 gráfico marcado (senão ele fica
-    // espremido numa metade da imagem, com a outra metade em branco).
+    // espremido numa metade da imagem, com a outra metade em branco). A
+    // largura da imagem toda acompanha isso — proporcional ao conteúdo, não
+    // mais a largura cheia da tela (senão saía uma faixa larga com o gráfico
+    // pequeno no meio, ruim pra colar num Word).
     var graficosVisiveis = document.querySelectorAll('.dash-graficos > [data-secao]:not(.oculta-export)').length;
-    document.querySelector('.dash-graficos').style.setProperty('--colunas-export', Math.max(1, Math.min(2, graficosVisiveis)));
+    var colunas = Math.max(1, Math.min(2, graficosVisiveis));
+    document.querySelector('.dash-graficos').style.setProperty('--colunas-export', colunas);
+    overlay.style.setProperty('--largura-export', colunas === 1 ? '640px' : '1180px');
 
     overlay.classList.add('exportando');
     // deixa o layout assentar (corpo sem scroll, seções escondidas) antes de capturar
@@ -1061,6 +1073,7 @@ document.getElementById('export-gerar').addEventListener('click', async function
     overlay.classList.remove('exportando');
     document.querySelectorAll('[data-secao]').forEach(function(el){ el.classList.remove('oculta-export'); });
     document.querySelector('.dash-graficos').style.removeProperty('--colunas-export');
+    overlay.style.removeProperty('--largura-export');
     botao.disabled = false;
     botao.textContent = textoOriginal;
   }
