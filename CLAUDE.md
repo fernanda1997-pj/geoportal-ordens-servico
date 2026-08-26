@@ -6,8 +6,8 @@ com filtros e um Painel Executivo pra apresentação/relatório.
 
 Usuária: Fernanda (RTA Engenheiros Consultores). Responder sempre em português.
 
-- **Site**: (ainda não publicado — ver seção "Publicar")
-- **Repo**: (ainda não publicado)
+- **Site**: https://geoportal-ordens-servico.vercel.app
+- **Repo**: https://github.com/fernanda1997-pj/geoportal-ordens-servico
 
 Repo próprio desde **2026-08-18** — antes vivia como pasta `ordens-servico/` dentro
 do repo `web - fichas` (junto com o app de ficha de inspeção). A usuária pediu
@@ -21,7 +21,7 @@ totalmente independente.
 |---|---|
 | `index.html` | App inteiro (HTML+CSS+JS, sem build). CDN: Leaflet 1.9.4, Chart.js 4, html-to-image 1.11.13 (carregada sob demanda só na hora de exportar imagem) |
 | `converter_os.py` | Lê `fichas/OS/*.xlsm` + `camadas/R<n>_TRECHOS.shp` (campo `Id` = "N° TRECHO" da planilha), gera uma feature por linha do shapefile que bater com o trecho — geometria do trecho INTEIRO, sem corte por km (O.S.P. não referencia sub-trecho, diferente da ficha de inspeção) |
-| `fichas/OS/` | Planilha(s) de Controle de O.S.P., como chegam (ex. `Controle de OSPs LOTE 01.xlsm`) — **não editar**, só adicionar/atualizar arquivo aqui e rodar o converter de novo |
+| `fichas/OS/` | Planilha(s) de Controle de O.S.P., como chegam (ex. `Controle de OSPs LOTE 01.xlsm`) — **não editar**, só adicionar/atualizar arquivo aqui e rodar o converter de novo. **O converter lê TODOS os `.xls*` soltos aqui dentro e SOMA as O.S.P. de cada um por região** — pra atualizar a planilha, mover a versão antiga pra `fichas/OS/_anteriores/` (fora do glob) ANTES de colocar a nova, senão duplica tudo nos totais |
 | `dados/os_<REGIAO>.js` | Um GeoJSON (`window.DADOS_OS_REGIAO[regiao]`) por região **geográfica** (R1, R2, R3...) — não por competência, a O.S. não é mensal |
 | `dados/manifest_os.js` | Lista de regiões disponíveis (`window.MANIFEST_OS`) |
 | `relatorio_qualidade_os.txt` | Gerado a cada rodada (gitignored) — trecho não encontrado no shapefile, erro de fórmula (`#REF!`) na planilha etc. |
@@ -42,6 +42,15 @@ só R1). Cada feature guarda os DOIS códigos:
 - `regiao_os` — código REAL da planilha (R01, R14, R22...), é o que a usuária pensa
   ("Região 14") e o que aparece em toda exibição pro usuário (`rotuloRegiao()`).
 - `tipo_servico` (`"manutencao"`/`"restauracao"`).
+- `contrato` — mesmo padrão de exibição: valor cru usado pra filtro/comparação,
+  `rotuloContrato()` (backed by `EMPRESA_POR_CONTRATO`) acrescenta " · NOME DA
+  EMPRESA" só na exibição, em todo lugar que mostra contrato (select, lista,
+  gaveta, resumo de filtros, Painel Executivo). **Exceção deliberada**: o rótulo
+  `contrato.osp` do ranking "Por O.S.P." (ex. "034.2025.0009") NÃO leva nome de
+  empresa — espelha o formato oficial da planilha, não mexer. Mapeamento
+  contrato→empresa é fornecido pela usuária (contratos são únicos no dataset
+  todo); se aparecer contrato novo sem empresa no mapa, `rotuloContrato()` cai
+  de volta pro número puro, sem quebrar.
 
 **Nunca usar `regiao` (geográfico) pra exibir ou agrupar/somar pro usuário** — já
 rendeu bug 2x (filtro Região misturando os dois tipos; gráfico "Previsto×Executado
