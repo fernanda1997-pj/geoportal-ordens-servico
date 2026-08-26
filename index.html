@@ -458,6 +458,26 @@ function rotuloRegiao(regiaoOs){
   return regiaoOs ? 'Região '+parseInt(regiaoOs.slice(1), 10) : '—';
 }
 
+// Número do contrato -> empresa contratada (lista fornecida pela usuária).
+// Números de contrato são únicos no conjunto todo, não precisa da região.
+var EMPRESA_POR_CONTRATO = {
+  '040.2024': 'LUCENA INFRAESTRUTURA LTDA',
+  '014.2025': 'CONSÓRCIO CENTRO NORTE I',
+  '002.2025': 'LUCENA INFRAESTRUTURA LTDA',
+  '1452.2026': 'ÉTICA CONSTRUTORA',
+  '034.2025': 'EDECONSIL CONSTRUÇÕES E LOCAÇÕES LTDA',
+  '035.2025': 'LUCENA INFRAESTRUTURA LTDA',
+  '036.2025': 'CONSÓRCIO CENTRO NORTE I',
+};
+// "002.2025" -> "002.2025 · LUCENA INFRAESTRUTURA LTDA" (ou só o número, se a
+// empresa não estiver no mapeamento). Usar sempre para EXIBIÇÃO — o valor cru
+// do contrato continua sendo usado pra filtro/comparação/formato oficial.
+function rotuloContrato(contrato){
+  if(!contrato) return '—';
+  var empresa = EMPRESA_POR_CONTRATO[contrato];
+  return empresa ? contrato+' · '+empresa : contrato;
+}
+
 // ---------------------------------------------------------------------
 // Mapa base
 // ---------------------------------------------------------------------
@@ -626,7 +646,7 @@ function popularSelectContrato(){
   });
   var sel = document.getElementById('os-sel-contrato');
   sel.innerHTML = '<option value="">Todos</option>' + Object.keys(contratos).sort().map(function(c){
-    return '<option value="'+c+'">'+c+'</option>';
+    return '<option value="'+c+'">'+rotuloContrato(c)+'</option>';
   }).join('');
   sel.value = Array.from(sel.options).some(function(o){ return o.value === valorAtual; }) ? valorAtual : '';
 }
@@ -716,7 +736,7 @@ function atualizarResumoFiltros(){
   var regiaoEl = document.getElementById('os-sel-regiao');
   if(regiaoEl.value) partes.push(regiaoEl.options[regiaoEl.selectedIndex].textContent);
   var contrato = document.getElementById('os-sel-contrato').value;
-  if(contrato) partes.push(contrato);
+  if(contrato) partes.push(rotuloContrato(contrato));
   if(mesAtivoOS) partes.push(mesAtivoOS);
   document.getElementById('filtros-resumo').textContent = partes.length ? partes.join(' · ') : 'todas as O.S.P.';
 }
@@ -740,7 +760,7 @@ function renderizarListaOS(){
     return (
       '<button class="os-item" data-chave="'+chaveOS(p)+'" style="border-left-color:'+corSituacao(p.situacao)+'">'+
         '<div class="rodovia">O.S.P. '+p.osp+' — '+rodoviaCurta(p.trecho_nome||'')+(e.semGeometria ? ' <span title="Sem geometria de trecho cadastrada — não aparece no mapa" style="font-size:10px;">📍⚠️</span>' : '')+'</div>'+
-        '<div class="sub">'+p.contrato+' · '+(p.servico||'—')+'</div>'+
+        '<div class="sub">'+rotuloContrato(p.contrato)+' · '+(p.servico||'—')+'</div>'+
         '<div class="rodape">'+
           '<span class="badge-situacao" style="background:'+corSituacao(p.situacao)+'">'+rotuloComIcone(p.situacao)+'</span>'+
           '<span class="valor">'+fmtReais(p.valor_previsto)+'</span>'+
@@ -779,7 +799,8 @@ function descricaoFiltrosOS(){
   var tipoTxt = tipo === 'restauracao' ? 'Restauração' : (tipo === 'manutencao' ? 'Manutenção' : 'Manutenção + Restauração');
   var regiaoEl = document.getElementById('os-sel-regiao');
   var regiaoTxt = regiaoEl.value ? regiaoEl.options[regiaoEl.selectedIndex].textContent : 'todas as regiões';
-  var contrato = document.getElementById('os-sel-contrato').value || 'todos os contratos';
+  var contratoVal = document.getElementById('os-sel-contrato').value;
+  var contrato = contratoVal ? rotuloContrato(contratoVal) : 'todos os contratos';
   var situacaoTxt = situacoesAtivasOS.size ? Array.from(situacoesAtivasOS).map(rotuloSituacao).join(' + ') : 'todas as situações';
   var base = tipoTxt + ' · ' + regiaoTxt + ' · ' + contrato + ' · ' + situacaoTxt;
   return mesAtivoOS ? base + ' · ' + mesAtivoOS : base;
@@ -1114,7 +1135,7 @@ function blocoOS(props, semGeometria){
   return (
     '<div class="bloco-os">'+
       '<h4>🧾 O.S.P. '+props.osp+' <span class="badge-situacao" style="background:'+cor+'">'+rotuloComIcone(props.situacao)+'</span></h4>'+
-      '<div class="linha"><span class="rot">Contrato</span><span class="val">'+props.contrato+'</span></div>'+
+      '<div class="linha"><span class="rot">Contrato</span><span class="val">'+rotuloContrato(props.contrato)+'</span></div>'+
       '<div class="linha"><span class="rot">Trecho</span><span class="val">'+(props.trecho_nome||'—')+'</span></div>'+
       '<div class="linha"><span class="rot">Serviço</span><span class="val">'+(props.servico||'—')+'</span></div>'+
       '<div class="linha"><span class="rot">Emissão</span><span class="val">'+(props.data_emissao||'—')+' · '+(props.cronograma||'—')+'</span></div>'+
@@ -1144,7 +1165,7 @@ function abrirOS(entrada){
   var p = entrada.props;
   document.getElementById('drawer-titulo').textContent = 'O.S.P. '+p.osp+' — '+rodoviaCurta(p.trecho_nome||'');
   document.getElementById('drawer-subtitulo').textContent =
-    p.contrato+' · '+rotuloRegiao(p.regiao_os)+' · '+(p.tipo_servico === 'restauracao' ? 'Restauração' : 'Manutenção');
+    rotuloContrato(p.contrato)+' · '+rotuloRegiao(p.regiao_os)+' · '+(p.tipo_servico === 'restauracao' ? 'Restauração' : 'Manutenção');
   document.getElementById('drawer-corpo').innerHTML = blocoOS(p, entrada.semGeometria);
   document.getElementById('drawer').classList.add('aberta');
 }
