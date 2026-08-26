@@ -463,13 +463,13 @@ function rotuloRegiao(regiaoOs){
 // ---------------------------------------------------------------------
 var map = L.map('map', {zoomControl:true}).setView([-10.3, -48.3], 7);
 
-var baseClaro = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-  attribution:'&copy; OpenStreetMap, &copy; CARTO', maxZoom:19,
+var baseOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution:'&copy; OpenStreetMap contributors', maxZoom:19,
 }).addTo(map);
 var baseSatelite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
   attribution:'Esri, Maxar, Earthstar Geographics', maxZoom:19,
 });
-L.control.layers({'Padrão': baseClaro, 'Satélite': baseSatelite}, null, {position:'bottomleft'}).addTo(map);
+L.control.layers({'OpenStreetMap': baseOSM, 'Satélite': baseSatelite}, null, {position:'bottomleft'}).addTo(map);
 L.control.scale({imperial:false, position:'bottomright'}).addTo(map);
 
 var MANIFEST_OS = window.MANIFEST_OS || [];
