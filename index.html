@@ -586,13 +586,22 @@ var mesAtivoOS = '';
 var ORDEM_MESES_COMPLETA = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-// Só os meses que existem de verdade nos dados (mesmo critério de
-// popularSelectRegiao/Contrato), na ordem do calendário.
+// Só os meses que existem de verdade nos dados JÁ filtrados por Tipo/Região/
+// Contrato/Situação (mesmo critério de popularSelectRegiao/Contrato — cada um
+// só mostra opção que bate com o resto do filtro ativo), na ordem do calendário.
 function popularSelectMes(){
+  var tipo = document.getElementById('os-sel-tipo').value;
+  var regiaoOs = document.getElementById('os-sel-regiao').value;
+  var contrato = document.getElementById('os-sel-contrato').value;
   var valorAtual = document.getElementById('os-sel-mes').value;
   var meses = {};
   todasFeaturesOS().forEach(function(f){
-    var m = f.properties.data_emissao; // "Julho/2025" — mês por extenso + ano do contrato
+    var p = f.properties;
+    if(tipo && p.tipo_servico !== tipo) return;
+    if(regiaoOs && p.regiao_os !== regiaoOs) return;
+    if(contrato && p.contrato !== contrato) return;
+    if(situacoesAtivasOS.size && !situacoesAtivasOS.has(p.situacao)) return;
+    var m = p.data_emissao; // "Julho/2025" — mês por extenso + ano do contrato
     if(m && m !== '-') meses[m] = true;
   });
   // Ordena por ano, depois pela ordem do calendário (não alfabética — senão
@@ -608,6 +617,11 @@ function popularSelectMes(){
     .map(function(m){ return '<option value="'+m+'">'+m+'</option>'; })
     .join('');
   sel.value = Array.from(sel.options).some(function(o){ return o.value === valorAtual; }) ? valorAtual : '';
+  // sel.value pode ter voltado a "" sem disparar o evento 'change' (mês
+  // escolhido não existe mais nessa combinação de filtros) — sincroniza a
+  // variável global usada por entradasFiltradasOS(), senão o filtro de mês
+  // continua aplicando um valor que já sumiu do select.
+  mesAtivoOS = sel.value;
 }
 
 // Região usa o código REAL da planilha (regiao_os: "R01".."R13" = manutenção,
@@ -665,13 +679,18 @@ function montarFiltrosOS(){
   document.getElementById('os-sel-tipo').addEventListener('change', function(){
     popularSelectRegiao();
     popularSelectContrato();
+    popularSelectMes();
     renderizarListaOS();
   });
   document.getElementById('os-sel-regiao').addEventListener('change', function(){
     popularSelectContrato();
+    popularSelectMes();
     renderizarListaOS();
   });
-  document.getElementById('os-sel-contrato').addEventListener('change', renderizarListaOS);
+  document.getElementById('os-sel-contrato').addEventListener('change', function(){
+    popularSelectMes();
+    renderizarListaOS();
+  });
   document.getElementById('os-sel-mes').addEventListener('change', function(){
     mesAtivoOS = this.value;
     renderizarListaOS();
@@ -692,6 +711,7 @@ function montarFiltrosOS(){
         else situacoesAtivasOS.add(s);
       }
       atualizarVisualPillsSituacao();
+      popularSelectMes();
       renderizarListaOS();
     });
   });
