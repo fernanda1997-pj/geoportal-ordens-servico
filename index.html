@@ -40,6 +40,27 @@
   }
   #os-busca-osp:focus{outline:2px solid var(--azul); outline-offset:-1px;}
 
+  /* Dropdown de Mês — fechado por padrão (select nativo multiple deixa a
+     caixa toda aberta o tempo todo, ocupando espaço demais na tela; aqui só
+     abre a lista de meses quando clica no botão, igual o popover de
+     Exportar do Painel Executivo). */
+  .dropdown-mes{position:relative;}
+  .btn-dropdown-mes{
+    width:100%; padding:7px 10px; border:1px solid var(--borda); border-radius:6px;
+    font-size:13px; font-family:inherit; background:#fff; text-align:left; cursor:pointer;
+    display:flex; align-items:center; justify-content:space-between; gap:6px;
+  }
+  .btn-dropdown-mes .seta{color:var(--cinza); font-size:11px;}
+  .popover-mes{
+    display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:2100;
+    background:#fff; border:1px solid var(--borda); border-radius:8px;
+    box-shadow:0 8px 20px rgba(0,0,0,.16); padding:6px 10px; max-height:220px; overflow-y:auto;
+  }
+  .popover-mes.aberto{display:block;}
+  .popover-mes label{display:flex; align-items:center; gap:7px; font-size:12.5px; color:#334155; padding:4px 0; cursor:pointer;}
+  .popover-mes input[type=checkbox]{cursor:pointer;}
+  .popover-mes .vazio{font-size:12px; color:var(--cinza); font-style:italic; padding:4px 0;}
+
   .dica{font-size:11px; color:var(--cinza); margin-top:14px; line-height:1.5;}
   .vazio{font-size:12px; color:var(--cinza); font-style:italic; padding:10px 2px;}
   .separador{border:none; border-top:1px dashed var(--borda); margin:14px 0;}
@@ -322,8 +343,11 @@
         <label class="rotulo">Contrato</label>
         <select id="os-sel-contrato"><option value="">Todos</option></select>
 
-        <label class="rotulo">Mês (emissão + cronograma) <span style="font-weight:400; color:var(--cinza); font-size:10.5px;">(Ctrl/Cmd+clique pra vários)</span></label>
-        <select id="os-sel-mes" multiple size="5"></select>
+        <label class="rotulo">Mês (emissão + cronograma)</label>
+        <div class="dropdown-mes">
+          <button type="button" id="os-btn-mes" class="btn-dropdown-mes">Todos os meses <span class="seta">▾</span></button>
+          <div id="os-popover-mes" class="popover-mes"></div>
+        </div>
       </div>
 
       <label class="rotulo" style="margin-top:14px;">Relação das O.S.P.</label>
@@ -658,16 +682,28 @@ function popularSelectMes(){
     mesesDaEntrada(p).forEach(function(m){ meses[m] = true; });
   });
   var chaves = ordenarMesesEmissao(Object.keys(meses));
-  var sel = document.getElementById('os-sel-mes');
-  sel.innerHTML = chaves.map(function(m){ return '<option value="'+m+'">'+m+'</option>'; }).join('');
   // Mantém os meses já escolhidos que ainda existem nessa combinação nova de
   // filtros (mesma ideia de valorAtual dos outros selects, mas pra um Set —
   // um mês escolhido antes pode ter sumido, ex. trocou Contrato e esse
   // contrato não teve O.S.P. naquele mês).
   var novosValidos = new Set(chaves);
-  var mantidos = new Set(Array.from(mesesAtivosOS).filter(function(m){ return novosValidos.has(m); }));
-  Array.from(sel.options).forEach(function(o){ o.selected = mantidos.has(o.value); });
-  mesesAtivosOS = mantidos;
+  mesesAtivosOS = new Set(Array.from(mesesAtivosOS).filter(function(m){ return novosValidos.has(m); }));
+  var popover = document.getElementById('os-popover-mes');
+  popover.innerHTML = chaves.length ? chaves.map(function(m){
+    var marcado = mesesAtivosOS.has(m) ? ' checked' : '';
+    return '<label><input type="checkbox" value="'+m+'"'+marcado+'> '+m+'</label>';
+  }).join('') : '<div class="vazio">Nenhum mês nessa combinação de filtros.</div>';
+  atualizarBotaoMes();
+}
+
+// Texto do botão reflete a seleção: "Todos os meses", 1 mês por extenso, ou
+// "N meses selecionados" (uma lista longa não caberia legível no botão).
+function atualizarBotaoMes(){
+  var btn = document.getElementById('os-btn-mes');
+  var texto = mesesAtivosOS.size === 0 ? 'Todos os meses'
+    : mesesAtivosOS.size === 1 ? Array.from(mesesAtivosOS)[0]
+    : mesesAtivosOS.size + ' meses selecionados';
+  btn.childNodes[0].nodeValue = texto + ' ';
 }
 
 // Região usa o código REAL da planilha (regiao_os: "R01".."R13" = manutenção,
@@ -737,8 +773,24 @@ function montarFiltrosOS(){
     popularSelectMes();
     renderizarListaOS();
   });
-  document.getElementById('os-sel-mes').addEventListener('change', function(){
-    mesesAtivosOS = new Set(Array.from(this.selectedOptions).map(function(o){ return o.value; }));
+  // Botão abre/fecha o popover; um clique em qualquer lugar fora dele fecha
+  // (mesmo padrão de dropdown fechado por padrão que a usuária pediu).
+  document.getElementById('os-btn-mes').addEventListener('click', function(e){
+    e.stopPropagation();
+    document.getElementById('os-popover-mes').classList.toggle('aberto');
+  });
+  document.addEventListener('click', function(e){
+    var pop = document.getElementById('os-popover-mes');
+    if(pop.classList.contains('aberto') && !pop.contains(e.target) && e.target.id !== 'os-btn-mes'){
+      pop.classList.remove('aberto');
+    }
+  });
+  // Delegado no container (as checkboxes são recriadas a cada popularSelectMes()).
+  document.getElementById('os-popover-mes').addEventListener('change', function(e){
+    if(e.target.type !== 'checkbox') return;
+    if(e.target.checked) mesesAtivosOS.add(e.target.value);
+    else mesesAtivosOS.delete(e.target.value);
+    atualizarBotaoMes();
     renderizarListaOS();
   });
   document.getElementById('os-busca-osp').addEventListener('input', function(){
