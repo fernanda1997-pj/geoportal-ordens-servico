@@ -322,7 +322,7 @@
         <label class="rotulo">Contrato</label>
         <select id="os-sel-contrato"><option value="">Todos</option></select>
 
-        <label class="rotulo">Mês de emissão <span style="font-weight:400; color:var(--cinza); font-size:10.5px;">(Ctrl/Cmd+clique pra vários)</span></label>
+        <label class="rotulo">Mês (emissão + cronograma) <span style="font-weight:400; color:var(--cinza); font-size:10.5px;">(Ctrl/Cmd+clique pra vários)</span></label>
         <select id="os-sel-mes" multiple size="5"></select>
       </div>
 
@@ -596,12 +596,10 @@ var filtrosOsMontados = false;
 // Multi-seleção — pode escolher "Concluída" + "Em andamento" ao mesmo tempo,
 // por exemplo. Vazio = "Todas" (nenhum filtro de situação).
 var situacoesAtivasOS = new Set();
-// Mês de emissão da O.S.P. (campo DATA EMISSÃO da planilha, já vem por extenso:
-// "Janeiro", "Fevereiro"...) — filtra a lista/mapa igual Região/Tipo/Contrato.
-// Multi-seleção (Set), mesmo motivo de situacoesAtivasOS: uma O.S.P. de
-// contrato de vários meses só é encontrada 1 mês por vez com seleção única —
-// a usuária quer poder ver "Julho + Agosto" junto, por exemplo. Vazio =
-// "Todos os meses".
+// Mês (emissão OU cronograma — ver mesesDaEntrada()) que filtra a lista/mapa
+// igual Região/Tipo/Contrato. Multi-seleção (Set), mesmo motivo de
+// situacoesAtivasOS: a usuária quer poder ver "Julho + Agosto" junto, por
+// exemplo. Vazio = "Todos os meses".
 var mesesAtivosOS = new Set();
 var ORDEM_MESES_COMPLETA = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -616,6 +614,20 @@ function ospBate(props, busca){
   var rotuloCompleto = props.contrato + '.' + numeroPadded;
   return numero.indexOf(busca) !== -1 || numeroPadded.indexOf(busca) !== -1 ||
     rotuloCompleto.indexOf(busca) !== -1;
+}
+
+// Todos os meses em que essa O.S.P. "existe" pro filtro de Mês: o mês de
+// EMISSÃO + os mês(es) do CRONOGRAMA (execução planejada) — ex. emitida em
+// Agosto com cronograma "ago/set" deve aparecer nos dois, sem a usuária
+// precisar marcar os dois manualmente (pedido explícito: "ela só aparece pra
+// mim em agosto [...] preciso que apareça no mês de agosto E setembro, sem
+// eu precisar selecionar os 2 meses"). meses_cronograma já vem pronto do
+// converter_os.py (parse_meses_cronograma), no mesmo formato "Mês/Ano".
+function mesesDaEntrada(props){
+  var lista = {};
+  if(props.data_emissao && props.data_emissao !== '-') lista[props.data_emissao] = true;
+  (props.meses_cronograma || []).forEach(function(m){ lista[m] = true; });
+  return Object.keys(lista);
 }
 
 // Ordena "Mês/Ano" por ano e depois pela ordem do calendário (não alfabética
@@ -643,8 +655,7 @@ function popularSelectMes(){
     if(regiaoOs && p.regiao_os !== regiaoOs) return;
     if(contrato && p.contrato !== contrato) return;
     if(situacoesAtivasOS.size && !situacoesAtivasOS.has(p.situacao)) return;
-    var m = p.data_emissao; // "Julho/2025" — mês por extenso + ano do contrato
-    if(m && m !== '-') meses[m] = true;
+    mesesDaEntrada(p).forEach(function(m){ meses[m] = true; });
   });
   var chaves = ordenarMesesEmissao(Object.keys(meses));
   var sel = document.getElementById('os-sel-mes');
@@ -827,7 +838,7 @@ function entradasFiltradasOS(){
     if(regiaoOs && p.regiao_os !== regiaoOs) return false;
     if(contrato && p.contrato !== contrato) return false;
     if(situacoesAtivasOS.size && !situacoesAtivasOS.has(p.situacao)) return false;
-    if(mesesAtivosOS.size && !mesesAtivosOS.has(p.data_emissao)) return false;
+    if(mesesAtivosOS.size && !mesesDaEntrada(p).some(function(m){ return mesesAtivosOS.has(m); })) return false;
     if(!ospBate(p, buscaOspOS)) return false;
     return true;
   });
@@ -930,7 +941,7 @@ function fmtReaisCompacto(v){
 
 // "Executado no mês" e "acumulado até o mês", dentro do conjunto de O.S.P. já
 // filtrado (entradas) — soma medido_mensal (série da aba HISTÓRICO, sempre
-// Jan..Dez, sem ano) até o MÊS escolhido no filtro "Mês de emissão" (o ano da
+// Jan..Dez, sem ano) até o MÊS escolhido no filtro "Mês (emissão + cronograma)" (o ano da
 // seleção não entra aqui, só o mês — cada O.S.P. tem sua própria linha do
 // tempo de medição). Só faz sentido com EXATAMENTE 1 mês escolhido (é um
 // corte "até este ponto do calendário" — com "Todos os meses" ou vários

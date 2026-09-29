@@ -49,6 +49,41 @@ REGIOES_RESTAURACAO = set(MAPA_REGIAO_GEOGRAFICA.keys())
 MESES_PT = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
             7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
 
+# Abreviação (3 letras, como vem na coluna CRONOGRAMA, ex. "ago/set") -> nome
+# completo do mês + índice (0-based) — usado só pra montar `meses_cronograma`.
+MESES_ABREV = {
+    'JAN': ('Janeiro', 0), 'FEV': ('Fevereiro', 1), 'MAR': ('Março', 2), 'ABR': ('Abril', 3),
+    'MAI': ('Maio', 4), 'JUN': ('Junho', 5), 'JUL': ('Julho', 6), 'AGO': ('Agosto', 7),
+    'SET': ('Setembro', 8), 'OUT': ('Outubro', 9), 'NOV': ('Novembro', 10), 'DEZ': ('Dezembro', 11),
+}
+
+
+def parse_meses_cronograma(cronograma_raw, ano_base):
+    """CRONOGRAMA é tipo "ago/set" ou "jul/ago/set" — o(s) mês(es) em que a
+    execução está PREVISTA, sempre andando pra frente a partir do mês de
+    emissão (não é sub/superconjunto de DATA EMISSÃO, é informação adicional:
+    uma O.S.P. emitida em Agosto com cronograma "ago/set" deve aparecer tanto
+    no filtro de Agosto quanto no de Setembro). Sem ano na planilha — usa o
+    mesmo ano_base de DATA EMISSÃO (do sufixo .AAAA do contrato) e só avança
+    o ano se um token "voltar" no calendário em relação ao anterior (virada
+    de ano-civil no meio do cronograma; não visto nos dados até agora, mas a
+    regra fica correta se acontecer)."""
+    if not cronograma_raw or not isinstance(cronograma_raw, str) or ano_base is None:
+        return []
+    resultado = []
+    ano = ano_base
+    idx_anterior = None
+    for token in cronograma_raw.split('/'):
+        info = MESES_ABREV.get(_norm(token)[:3])
+        if not info:
+            continue
+        nome, idx = info
+        if idx_anterior is not None and idx < idx_anterior:
+            ano += 1
+        resultado.append(f'{nome}/{ano}')
+        idx_anterior = idx
+    return resultado
+
 qa_msgs = []
 
 
@@ -256,10 +291,13 @@ def parse_planilha_os(caminho):
             # ano). Vira "Julho/2025" em vez de só "Julho", pra não misturar anos.
             mes_emissao = valor(r, 'DATA EMISSAO')
             m_ano = re.search(r'(\d{4})\s*$', str(contrato or ''))
+            ano_base = int(m_ano.group(1)) if m_ano else None
             if mes_emissao and mes_emissao != '-' and m_ano:
                 data_emissao = f'{mes_emissao}/{m_ano.group(1)}'
             else:
                 data_emissao = mes_emissao
+            cronograma_raw = valor(r, 'CRONOGRAMA')
+            meses_cronograma = parse_meses_cronograma(cronograma_raw, ano_base)
 
             props = {
                 'regiao': regiao_geo_label,
@@ -268,7 +306,12 @@ def parse_planilha_os(caminho):
                 'contrato': contrato,
                 'osp': osp,
                 'data_emissao': data_emissao,
-                'cronograma': valor(r, 'CRONOGRAMA'),
+                'cronograma': cronograma_raw,
+                # Mês(es) em que a EXECUÇÃO está prevista (pode ser vários,
+                # ex. "ago/set" -> ["Agosto/2025","Setembro/2025"]) — usado
+                # pra filtro de mês junto com data_emissao, não no lugar dele
+                # (ver parse_meses_cronograma).
+                'meses_cronograma': meses_cronograma,
                 'trecho_num': trecho_num,
                 'trecho_nome': trecho_nome,
                 'servico': valor(r, 'SERVICO'),
