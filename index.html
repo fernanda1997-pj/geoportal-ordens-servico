@@ -83,6 +83,14 @@
   .kpi-mini b{display:block; font-size:15px; color:var(--azul); font-weight:800; white-space:nowrap;}
   .kpi-mini span{font-size:9px; color:var(--cinza); line-height:1.25;}
 
+  /* KPIs que também funcionam como atalho de filtro (Emitidas/Concluídas/
+     Pendentes) — mesmo elemento nos dois lugares (painel lateral e Painel
+     Executivo), só a aparência de "botão" muda. */
+  .kpi-clicavel{cursor:pointer; transition:box-shadow .15s, transform .15s, border-color .15s;}
+  .kpi-clicavel:hover{box-shadow:0 2px 8px rgba(0,0,0,.14); transform:translateY(-1px);}
+  .kpi-clicavel:active{transform:translateY(0);}
+  .kpi-clicavel.ativo{border-color:var(--azul); border-width:2px;}
+
   /* ---------- Cartão de O.S.P. (gaveta) ---------- */
   .bloco-os{
     margin:0 0 12px; padding:9px 12px; background:#FFFBEB; border:1px solid #FDE68A;
@@ -286,9 +294,9 @@
     </header>
     <div class="conteudo" id="painel-os">
       <div class="kpis-grade">
-        <div class="kpi-mini"><b id="os-total">—</b><span>O.S.P. cadastradas</span></div>
-        <div class="kpi-mini"><b id="os-concluidas">—</b><span>concluídas</span></div>
-        <div class="kpi-mini"><b id="os-pendentes">—</b><span>pendentes</span></div>
+        <div class="kpi-mini kpi-clicavel" data-filtro-situacao="todas" title="Ver todas as O.S.P. emitidas"><b id="os-total">—</b><span>emitidas</span></div>
+        <div class="kpi-mini kpi-clicavel" data-filtro-situacao="concluidas" title="Filtrar só as concluídas"><b id="os-concluidas">—</b><span>concluídas</span></div>
+        <div class="kpi-mini kpi-clicavel" data-filtro-situacao="pendentes" title="Filtrar as ainda não concluídas"><b id="os-pendentes">—</b><span>pendentes</span></div>
         <div class="kpi-mini"><b id="os-valor">—</b><span>previsto</span></div>
       </div>
 
@@ -379,9 +387,9 @@
 
     <div class="dash-corpo">
       <div class="dash-kpis" data-secao="kpis">
-        <div class="dash-kpi"><b id="dash-kpi-total">—</b><span>O.S.P. cadastradas</span></div>
-        <div class="dash-kpi"><b id="dash-kpi-concluidas">—</b><span>concluídas</span></div>
-        <div class="dash-kpi"><b id="dash-kpi-pendentes">—</b><span>pendentes</span></div>
+        <div class="dash-kpi kpi-clicavel" data-filtro-situacao="todas" title="Ver todas as O.S.P. emitidas"><b id="dash-kpi-total">—</b><span>emitidas</span></div>
+        <div class="dash-kpi kpi-clicavel" data-filtro-situacao="concluidas" title="Filtrar só as concluídas"><b id="dash-kpi-concluidas">—</b><span>concluídas</span></div>
+        <div class="dash-kpi kpi-clicavel" data-filtro-situacao="pendentes" title="Filtrar as ainda não concluídas"><b id="dash-kpi-pendentes">—</b><span>pendentes</span></div>
         <div class="dash-kpi"><b id="dash-kpi-previsto">—</b><span>valor previsto</span></div>
         <div class="dash-kpi"><b id="dash-kpi-executado">—</b><span>valor executado</span></div>
         <div class="dash-kpi"><b id="dash-kpi-pct">—</b><span>% executado</span></div>
@@ -742,11 +750,22 @@ function montarFiltrosOS(){
         else situacoesAtivasOS.add(s);
       }
       atualizarVisualPillsSituacao();
+      atualizarVisualKpiClicaveis();
       popularSelectMes();
       renderizarListaOS();
     });
   });
   atualizarVisualPillsSituacao();
+
+  // KPIs "emitidas"/"concluídas"/"pendentes" (painel lateral + Painel
+  // Executivo) funcionam como atalho: clicar já aplica o filtro de Situação
+  // correspondente, em vez de ter que abrir "Filtros" e mexer nas pills.
+  document.querySelectorAll('.kpi-clicavel').forEach(function(el){
+    el.addEventListener('click', function(){
+      aplicarFiltroSituacaoRapido(el.getAttribute('data-filtro-situacao'), todas);
+    });
+  });
+  atualizarVisualKpiClicaveis();
 }
 
 function atualizarVisualPillsSituacao(){
@@ -756,6 +775,45 @@ function atualizarVisualPillsSituacao(){
     b.classList.toggle('ativa', ativa);
     b.style.background = ativa ? (s ? corSituacao(s) : 'var(--azul)') : '#fff';
     b.style.color = ativa ? '#fff' : '#334155';
+  });
+}
+
+// "todas" (emitidas) limpa o filtro de Situação; "concluidas" isola só
+// Concluída; "pendentes" seleciona TODAS as situações que existem nos dados
+// MENOS Concluída (o mesmo grupo que vira o KPI "pendentes").
+function aplicarFiltroSituacaoRapido(tipo, todasFeats){
+  if(tipo === 'concluidas'){
+    situacoesAtivasOS = new Set(['Concluída']);
+  }else if(tipo === 'pendentes'){
+    var situacoes = {};
+    (todasFeats || todasFeaturesOS()).forEach(function(f){ situacoes[f.properties.situacao] = true; });
+    delete situacoes['Concluída'];
+    situacoesAtivasOS = new Set(Object.keys(situacoes));
+  }else{
+    situacoesAtivasOS.clear();
+  }
+  atualizarVisualPillsSituacao();
+  atualizarVisualKpiClicaveis();
+  popularSelectMes();
+  renderizarListaOS();
+}
+
+// Marca visualmente qual atalho de KPI bate com o filtro de Situação atual
+// (só quando o conjunto ativo é EXATAMENTE "Concluída" ou EXATAMENTE "tudo
+// menos Concluída" — qualquer outra combinação manual pelas pills não marca
+// nenhum dos 3, o que é o comportamento esperado).
+function atualizarVisualKpiClicaveis(){
+  var situacoesTodas = {};
+  todasFeaturesOS().forEach(function(f){ situacoesTodas[f.properties.situacao] = true; });
+  delete situacoesTodas['Concluída'];
+  var setPendentes = Object.keys(situacoesTodas).sort().join('|');
+  var setAtual = Array.from(situacoesAtivasOS).sort().join('|');
+  document.querySelectorAll('.kpi-clicavel').forEach(function(el){
+    var tipo = el.getAttribute('data-filtro-situacao');
+    var ativo = (tipo === 'todas' && situacoesAtivasOS.size === 0) ||
+      (tipo === 'concluidas' && setAtual === 'Concluída') ||
+      (tipo === 'pendentes' && setAtual === setPendentes);
+    el.classList.toggle('ativo', ativo);
   });
 }
 
