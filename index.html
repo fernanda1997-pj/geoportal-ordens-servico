@@ -75,7 +75,7 @@
   #drawer td{padding:5px 8px; border-bottom:1px solid var(--borda); white-space:nowrap;}
 
   /* ---------- KPIs em grade ---------- */
-  .kpis-grade{display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-top:4px;}
+  .kpis-grade{display:grid; grid-template-columns:repeat(2, 1fr); gap:6px; margin-top:4px;}
   .kpi-mini{
     background:var(--fundo); border:1px solid var(--borda); border-radius:8px;
     padding:8px 4px; text-align:center;
@@ -177,7 +177,7 @@
   #dashboard-overlay .dash-acoes button:hover{background:rgba(255,255,255,.26);}
   #dashboard-overlay .dash-corpo{flex:1; overflow:auto; padding:18px 22px 26px;}
 
-  .dash-kpis{display:grid; grid-template-columns:repeat(6, 1fr); gap:12px; margin-bottom:18px;}
+  .dash-kpis{display:grid; grid-template-columns:repeat(7, 1fr); gap:12px; margin-bottom:18px;}
   .dash-kpis.com-mes{grid-template-columns:repeat(4, 1fr);}
   .dash-kpi{
     background:#fff; border:1px solid var(--borda); border-radius:10px; padding:12px 10px;
@@ -288,6 +288,7 @@
       <div class="kpis-grade">
         <div class="kpi-mini"><b id="os-total">—</b><span>O.S.P. cadastradas</span></div>
         <div class="kpi-mini"><b id="os-concluidas">—</b><span>concluídas</span></div>
+        <div class="kpi-mini"><b id="os-pendentes">—</b><span>pendentes</span></div>
         <div class="kpi-mini"><b id="os-valor">—</b><span>previsto</span></div>
       </div>
 
@@ -380,6 +381,7 @@
       <div class="dash-kpis" data-secao="kpis">
         <div class="dash-kpi"><b id="dash-kpi-total">—</b><span>O.S.P. cadastradas</span></div>
         <div class="dash-kpi"><b id="dash-kpi-concluidas">—</b><span>concluídas</span></div>
+        <div class="dash-kpi"><b id="dash-kpi-pendentes">—</b><span>pendentes</span></div>
         <div class="dash-kpi"><b id="dash-kpi-previsto">—</b><span>valor previsto</span></div>
         <div class="dash-kpi"><b id="dash-kpi-executado">—</b><span>valor executado</span></div>
         <div class="dash-kpi"><b id="dash-kpi-pct">—</b><span>% executado</span></div>
@@ -804,6 +806,7 @@ function renderizarListaOS(){
   var valor = entradas.reduce(function(s, e){ return s + (e.props.valor_previsto||0); }, 0);
   document.getElementById('os-total').textContent = entradas.length;
   document.getElementById('os-concluidas').textContent = concluidas;
+  document.getElementById('os-pendentes').textContent = entradas.length - concluidas;
   document.getElementById('os-valor').textContent = fmtReais(valor);
 
   document.getElementById('os-lista').innerHTML = entradas.map(function(e){
@@ -919,6 +922,7 @@ function atualizarDashboard(){
 
   document.getElementById('dash-kpi-total').textContent = entradas.length;
   document.getElementById('dash-kpi-concluidas').textContent = concluidas;
+  document.getElementById('dash-kpi-pendentes').textContent = entradas.length - concluidas;
   document.getElementById('dash-kpi-previsto').textContent = fmtReais(totalPrevisto);
   document.getElementById('dash-kpi-executado').textContent = fmtReais(totalExecutado);
   document.getElementById('dash-kpi-pct').textContent = pct.toFixed(1).replace('.', ',')+'%';
