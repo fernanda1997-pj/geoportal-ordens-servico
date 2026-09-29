@@ -313,8 +313,8 @@
         <label class="rotulo">Contrato</label>
         <select id="os-sel-contrato"><option value="">Todos</option></select>
 
-        <label class="rotulo">Mês de emissão</label>
-        <select id="os-sel-mes"><option value="">Todos os meses</option></select>
+        <label class="rotulo">Mês de emissão <span style="font-weight:400; color:var(--cinza); font-size:10.5px;">(Ctrl/Cmd+clique pra vários)</span></label>
+        <select id="os-sel-mes" multiple size="5"></select>
       </div>
 
       <label class="rotulo" style="margin-top:14px;">Relação das O.S.P.</label>
@@ -588,12 +588,16 @@ var filtrosOsMontados = false;
 var situacoesAtivasOS = new Set();
 // Mês de emissão da O.S.P. (campo DATA EMISSÃO da planilha, já vem por extenso:
 // "Janeiro", "Fevereiro"...) — filtra a lista/mapa igual Região/Tipo/Contrato.
-var mesAtivoOS = '';
+// Multi-seleção (Set), mesmo motivo de situacoesAtivasOS: uma O.S.P. de
+// contrato de vários meses só é encontrada 1 mês por vez com seleção única —
+// a usuária quer poder ver "Julho + Agosto" junto, por exemplo. Vazio =
+// "Todos os meses".
+var mesesAtivosOS = new Set();
 var ORDEM_MESES_COMPLETA = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 // Busca livre pelo número da O.S.P. — não repopula nenhum outro select
 // (diferente de Tipo/Região/Contrato/Mês), só entra como mais um critério
-// dentro de entradasFiltradasOS(), igual situacoesAtivasOS/mesAtivoOS.
+// dentro de entradasFiltradasOS(), igual situacoesAtivasOS/mesesAtivosOS.
 var buscaOspOS = '';
 function ospBate(props, busca){
   if(!busca) return true;
@@ -604,6 +608,17 @@ function ospBate(props, busca){
     rotuloCompleto.indexOf(busca) !== -1;
 }
 
+// Ordena "Mês/Ano" por ano e depois pela ordem do calendário (não alfabética
+// — senão "Agosto/2026" viria antes de "Julho/2025", por exemplo).
+function ordenarMesesEmissao(meses){
+  return meses.slice().sort(function(a, b){
+    var pa = a.split('/'), pb = b.split('/');
+    var anoA = pa[1], anoB = pb[1];
+    if(anoA !== anoB) return anoA.localeCompare(anoB);
+    return ORDEM_MESES_COMPLETA.indexOf(pa[0]) - ORDEM_MESES_COMPLETA.indexOf(pb[0]);
+  });
+}
+
 // Só os meses que existem de verdade nos dados JÁ filtrados por Tipo/Região/
 // Contrato/Situação (mesmo critério de popularSelectRegiao/Contrato — cada um
 // só mostra opção que bate com o resto do filtro ativo), na ordem do calendário.
@@ -611,7 +626,6 @@ function popularSelectMes(){
   var tipo = document.getElementById('os-sel-tipo').value;
   var regiaoOs = document.getElementById('os-sel-regiao').value;
   var contrato = document.getElementById('os-sel-contrato').value;
-  var valorAtual = document.getElementById('os-sel-mes').value;
   var meses = {};
   todasFeaturesOS().forEach(function(f){
     var p = f.properties;
@@ -622,24 +636,17 @@ function popularSelectMes(){
     var m = p.data_emissao; // "Julho/2025" — mês por extenso + ano do contrato
     if(m && m !== '-') meses[m] = true;
   });
-  // Ordena por ano, depois pela ordem do calendário (não alfabética — senão
-  // "Agosto/2026" viria antes de "Julho/2025", por exemplo).
-  var chaves = Object.keys(meses).sort(function(a, b){
-    var pa = a.split('/'), pb = b.split('/');
-    var anoA = pa[1], anoB = pb[1];
-    if(anoA !== anoB) return anoA.localeCompare(anoB);
-    return ORDEM_MESES_COMPLETA.indexOf(pa[0]) - ORDEM_MESES_COMPLETA.indexOf(pb[0]);
-  });
+  var chaves = ordenarMesesEmissao(Object.keys(meses));
   var sel = document.getElementById('os-sel-mes');
-  sel.innerHTML = '<option value="">Todos os meses</option>' + chaves
-    .map(function(m){ return '<option value="'+m+'">'+m+'</option>'; })
-    .join('');
-  sel.value = Array.from(sel.options).some(function(o){ return o.value === valorAtual; }) ? valorAtual : '';
-  // sel.value pode ter voltado a "" sem disparar o evento 'change' (mês
-  // escolhido não existe mais nessa combinação de filtros) — sincroniza a
-  // variável global usada por entradasFiltradasOS(), senão o filtro de mês
-  // continua aplicando um valor que já sumiu do select.
-  mesAtivoOS = sel.value;
+  sel.innerHTML = chaves.map(function(m){ return '<option value="'+m+'">'+m+'</option>'; }).join('');
+  // Mantém os meses já escolhidos que ainda existem nessa combinação nova de
+  // filtros (mesma ideia de valorAtual dos outros selects, mas pra um Set —
+  // um mês escolhido antes pode ter sumido, ex. trocou Contrato e esse
+  // contrato não teve O.S.P. naquele mês).
+  var novosValidos = new Set(chaves);
+  var mantidos = new Set(Array.from(mesesAtivosOS).filter(function(m){ return novosValidos.has(m); }));
+  Array.from(sel.options).forEach(function(o){ o.selected = mantidos.has(o.value); });
+  mesesAtivosOS = mantidos;
 }
 
 // Região usa o código REAL da planilha (regiao_os: "R01".."R13" = manutenção,
@@ -710,7 +717,7 @@ function montarFiltrosOS(){
     renderizarListaOS();
   });
   document.getElementById('os-sel-mes').addEventListener('change', function(){
-    mesAtivoOS = this.value;
+    mesesAtivosOS = new Set(Array.from(this.selectedOptions).map(function(o){ return o.value; }));
     renderizarListaOS();
   });
   document.getElementById('os-busca-osp').addEventListener('input', function(){
@@ -760,7 +767,7 @@ function entradasFiltradasOS(){
     if(regiaoOs && p.regiao_os !== regiaoOs) return false;
     if(contrato && p.contrato !== contrato) return false;
     if(situacoesAtivasOS.size && !situacoesAtivasOS.has(p.situacao)) return false;
-    if(mesAtivoOS && p.data_emissao !== mesAtivoOS) return false;
+    if(mesesAtivosOS.size && !mesesAtivosOS.has(p.data_emissao)) return false;
     if(!ospBate(p, buscaOspOS)) return false;
     return true;
   });
@@ -780,7 +787,7 @@ function atualizarResumoFiltros(){
   if(regiaoEl.value) partes.push(regiaoEl.options[regiaoEl.selectedIndex].textContent);
   var contrato = document.getElementById('os-sel-contrato').value;
   if(contrato) partes.push(rotuloContrato(contrato));
-  if(mesAtivoOS) partes.push(mesAtivoOS);
+  if(mesesAtivosOS.size) partes.push(ordenarMesesEmissao(Array.from(mesesAtivosOS)).join(' + '));
   if(buscaOspOS) partes.push('nº "'+buscaOspOS+'"');
   document.getElementById('filtros-resumo').textContent = partes.length ? partes.join(' · ') : 'todas as O.S.P.';
 }
@@ -847,7 +854,7 @@ function descricaoFiltrosOS(){
   var contrato = contratoVal ? rotuloContrato(contratoVal) : 'todos os contratos';
   var situacaoTxt = situacoesAtivasOS.size ? Array.from(situacoesAtivasOS).map(rotuloSituacao).join(' + ') : 'todas as situações';
   var base = tipoTxt + ' · ' + regiaoTxt + ' · ' + contrato + ' · ' + situacaoTxt;
-  if(mesAtivoOS) base += ' · ' + mesAtivoOS;
+  if(mesesAtivosOS.size) base += ' · ' + ordenarMesesEmissao(Array.from(mesesAtivosOS)).join(' + ');
   if(buscaOspOS) base += ' · nº "' + buscaOspOS + '"';
   return base;
 }
@@ -864,17 +871,20 @@ function fmtReaisCompacto(v){
 // filtrado (entradas) — soma medido_mensal (série da aba HISTÓRICO, sempre
 // Jan..Dez, sem ano) até o MÊS escolhido no filtro "Mês de emissão" (o ano da
 // seleção não entra aqui, só o mês — cada O.S.P. tem sua própria linha do
-// tempo de medição). Some os 2 KPIs quando "Todos os meses" está selecionado.
+// tempo de medição). Só faz sentido com EXATAMENTE 1 mês escolhido (é um
+// corte "até este ponto do calendário" — com "Todos os meses" ou vários
+// meses ao mesmo tempo escolhidos, esconde os 2 KPIs, igual antes).
 function atualizarKpisMes(entradas){
   var tileValor = document.getElementById('kpi-mes-valor');
   var tileAcumulado = document.getElementById('kpi-mes-acumulado');
   var grade = document.querySelector('.dash-kpis');
-  if(!mesAtivoOS){
+  if(mesesAtivosOS.size !== 1){
     tileValor.style.display = 'none';
     tileAcumulado.style.display = 'none';
     grade.classList.remove('com-mes');
     return;
   }
+  var mesAtivoOS = Array.from(mesesAtivosOS)[0];
   grade.classList.add('com-mes');
   var mesNome = mesAtivoOS.split('/')[0];
   var idxMes = ORDEM_MESES_COMPLETA.indexOf(mesNome);
