@@ -34,6 +34,11 @@
     width:100%; padding:7px 8px; border:1px solid var(--borda); border-radius:6px;
     font-size:13px; font-family:inherit; background:#fff;
   }
+  #os-busca-osp{
+    width:100%; padding:7px 10px; border:1px solid var(--borda); border-radius:6px;
+    font-size:13px; font-family:inherit; background:#fff; margin-top:4px;
+  }
+  #os-busca-osp:focus{outline:2px solid var(--azul); outline-offset:-1px;}
 
   .dica{font-size:11px; color:var(--cinza); margin-top:14px; line-height:1.5;}
   .vazio{font-size:12px; color:var(--cinza); font-style:italic; padding:10px 2px;}
@@ -313,6 +318,7 @@
       </div>
 
       <label class="rotulo" style="margin-top:14px;">Relação das O.S.P.</label>
+      <input type="text" id="os-busca-osp" placeholder="🔎 Buscar pelo número da O.S.P.&hellip;" inputmode="numeric" autocomplete="off">
       <div id="os-lista"></div>
 
       <div class="dica">
@@ -585,6 +591,18 @@ var situacoesAtivasOS = new Set();
 var mesAtivoOS = '';
 var ORDEM_MESES_COMPLETA = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+// Busca livre pelo número da O.S.P. — não repopula nenhum outro select
+// (diferente de Tipo/Região/Contrato/Mês), só entra como mais um critério
+// dentro de entradasFiltradasOS(), igual situacoesAtivasOS/mesAtivoOS.
+var buscaOspOS = '';
+function ospBate(props, busca){
+  if(!busca) return true;
+  var numero = String(props.osp);
+  var numeroPadded = numero.padStart(4, '0');
+  var rotuloCompleto = props.contrato + '.' + numeroPadded;
+  return numero.indexOf(busca) !== -1 || numeroPadded.indexOf(busca) !== -1 ||
+    rotuloCompleto.indexOf(busca) !== -1;
+}
 
 // Só os meses que existem de verdade nos dados JÁ filtrados por Tipo/Região/
 // Contrato/Situação (mesmo critério de popularSelectRegiao/Contrato — cada um
@@ -695,6 +713,10 @@ function montarFiltrosOS(){
     mesAtivoOS = this.value;
     renderizarListaOS();
   });
+  document.getElementById('os-busca-osp').addEventListener('input', function(){
+    buscaOspOS = this.value.trim();
+    renderizarListaOS();
+  });
 
   var pillsHtml = '<button class="pill-situacao ativa" data-situacao="" style="background:var(--azul)">Todas <span class="n">'+todas.length+'</span></button>';
   Object.keys(situacoes).sort().forEach(function(s){
@@ -739,6 +761,7 @@ function entradasFiltradasOS(){
     if(contrato && p.contrato !== contrato) return false;
     if(situacoesAtivasOS.size && !situacoesAtivasOS.has(p.situacao)) return false;
     if(mesAtivoOS && p.data_emissao !== mesAtivoOS) return false;
+    if(!ospBate(p, buscaOspOS)) return false;
     return true;
   });
   return entradasUnicasOS(feats);
@@ -758,6 +781,7 @@ function atualizarResumoFiltros(){
   var contrato = document.getElementById('os-sel-contrato').value;
   if(contrato) partes.push(rotuloContrato(contrato));
   if(mesAtivoOS) partes.push(mesAtivoOS);
+  if(buscaOspOS) partes.push('nº "'+buscaOspOS+'"');
   document.getElementById('filtros-resumo').textContent = partes.length ? partes.join(' · ') : 'todas as O.S.P.';
 }
 
@@ -823,7 +847,9 @@ function descricaoFiltrosOS(){
   var contrato = contratoVal ? rotuloContrato(contratoVal) : 'todos os contratos';
   var situacaoTxt = situacoesAtivasOS.size ? Array.from(situacoesAtivasOS).map(rotuloSituacao).join(' + ') : 'todas as situações';
   var base = tipoTxt + ' · ' + regiaoTxt + ' · ' + contrato + ' · ' + situacaoTxt;
-  return mesAtivoOS ? base + ' · ' + mesAtivoOS : base;
+  if(mesAtivoOS) base += ' · ' + mesAtivoOS;
+  if(buscaOspOS) base += ' · nº "' + buscaOspOS + '"';
+  return base;
 }
 
 function fmtReaisCompacto(v){
