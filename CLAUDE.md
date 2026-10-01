@@ -174,6 +174,22 @@ novas desde a migração pro banco, "Fonte de dados" acima). Cores em
 Valor cru `"0"` ou vazio vira `"Não informada"` — status espúrio visto na
 Região 14, provavelmente erro de digitação na fonte, não uma situação real.
 
+## Prazo e atraso (`atrasada`, `prazo_limite`, `prazo_meses`)
+
+`PRAZO` (BD_OSP) é em **meses**, não dias (confirmado contra a distribuição
+real: sempre 1-4). `calcular_prazo()` em `converter_os.py`: prazo final =
+mês de emissão + PRAZO meses. Compara contra o ÚLTIMO mês com medição real
+(`meses_cronograma`) se a O.S.P. já está Concluída/Cancelada/Justificada, ou
+contra HOJE (`datetime.date.today()`, roda na máquina da usuária) se ainda
+está ativa. Sem emissão ou sem PRAZO na fonte → os 3 campos saem `null`
+(não assume nem "no prazo" nem "atrasada" sem dado pra provar). No frontend:
+badge "⏰ Atrasada" no item da lista, linha "Prazo" na gaveta, KPI
+`data-filtro-atrasada` clicável (painel lateral + Painel Executivo) — é um
+**toggle independente** do filtro de Situação (`filtroAtrasadas`, variável
+separada de `situacoesAtivasOS`), já que atraso corta através de várias
+situações ao mesmo tempo (uma "Em elaboração" parada há meses conta tanto
+quanto uma "Em andamento" que passou do prazo).
+
 ## O.S.P. sem geometria — ainda contam nos KPIs/lista
 
 Uma O.S.P. pode não ter geometria (trecho ainda "não cadastrado" na planilha, ou
