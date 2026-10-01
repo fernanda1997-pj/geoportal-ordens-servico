@@ -1,35 +1,54 @@
 # -*- coding: utf-8 -*-
 """
-converter_os.py — Geoportal de Inspeção Rodoviária (RTA-MSI / Tocantins)
+converter_os.py — Geoportal RTA-MSI / Ordens de Serviço (O.S.P.)
 
-Lê a(s) planilha(s) de Controle de O.S.P. (fichas/OS/*.xlsm — uma aba
-"REGIÃO XX - RESUMO" por região, uma linha por O.S.P.+trecho) e gera, por
-região GEOGRÁFICA (a mesma numeração da ficha de inspeção: R1, R2, R3, R11,
-R12, R13), um GeoJSON com uma feature por linha do shapefile de trechos
-(camadas/R<região>_TRECHOS.shp, campo `Id`) que bater com o "N° TRECHO" da
-O.S.P. — a geometria é o trecho INTEIRO (todos os S.R.E. daquele Id), sem
-corte por km: diferente da ficha, a O.S.P. não referencia sub-trecho.
+Lê direto do banco de dados oficial do órgão (SISTEMA_AGETO, Google Drive
+montado como G:\\), um arquivo BD_LOTE_XX.xlsx por região (pasta "LOTE XX"),
+e gera por região GEOGRÁFICA (R1, R2, R3, R11, R12, R13) um GeoJSON com uma
+feature por linha do shapefile de trechos (camadas/R<região>_TRECHOS.shp,
+campo `Id`) que bater com o TRECHO_N da O.S.P. — geometria do trecho INTEIRO,
+sem corte por km (O.S.P. não referencia sub-trecho).
+
+Substituiu em 2026-10 a leitura da planilha manual "Controle de OSPs
+LOTE 01/04.xlsx" (fichas/OS/*.xlsm) — essa planilha não tinha ano de emissão
+de verdade (só o mês), obrigava atualização manual e tinha pelo menos 1
+contrato errado (Região 24). O banco novo tem data completa, é a fonte viva
+usada pelo próprio órgão, e os campos adicionais (serviço, cronograma,
+medição mensal) vêm de abas cruzadas — ver comentários abaixo de cada leitor.
 
 Região de manutenção x restauração — mesma área geográfica, contrato
-diferente. A planilha de controle pode trazer as duas famílias de código
-pra mesmo lugar: 1/2/3/11/12/13 = manutenção, 14/15/16/22/23/24 =
-restauração da MESMA região física (confirmado pela usuária em 2026-08-14).
-`MAPA_REGIAO_GEOGRAFICA` traduz o código de restauração pro código
-geográfico que a ficha usa — sem isso a O.S. de restauração nunca acharia
-geometria (R14 não existe em camadas/, é sempre R1/R2/R3/R11/R12/R13).
+diferente (confirmado pela usuária em 2026-08-14). `MAPA_REGIAO_GEOGRAFICA`
+traduz o código de restauração pro código geográfico que o shapefile usa.
 
-Saída (tudo em dados/, consumido pelo index.html sem build):
+Particularidades do banco confirmadas por investigação (2026-10-02):
+- "Região 03" são DOIS bancos separados na mesma pasta de nível acima
+  (LOTE 03 - ETICA, contrato 1452.2026; LOTE 03 - LUCENA, contrato
+  002.2025) — mesma área física, dois contratos diferentes. Os dois
+  alimentam R3.
+- "Região 23" não existe ainda no banco (pendente do órgão criar) — fica
+  de fora até aparecer uma pasta LOTE 23.
+- "Região 16" tem um arquivo "BD_LOTE_16 - Copia.xlsx" solto na pasta —
+  usa sempre o que NÃO tem "Copia" no nome.
+- Tipos de dado inconsistentes dentro do próprio banco (confirmado nas 12
+  regiões): número de O.S.P. ora string zero-padded ("0073") ora int puro
+  (73); EXT_KM ora float ora string com vírgula decimal ("9,25"); datas ora
+  datetime real ora texto "MÊS-ANO"/"MÊS/ANO". Todo leitor abaixo trata os
+  dois formatos.
+
+Saída (tudo em dados/, consumido pelo index.html sem build, MESMO formato
+de antes — o frontend não precisou mudar):
     dados/os_<REGIAO>.js       -- um por região geográfica (R1, R2, ...)
     relatorio_qualidade_os.txt -- trecho não encontrado no shapefile etc.
 
 Rodar:  python converter_os.py
-Requer: openpyxl, geopandas, shapely
+Requer: openpyxl, geopandas, shapely — e acesso de leitura ao Google Drive
+        montado em G:\\ (SISTEMA_AGETO), ver BASE_SISTEMA abaixo.
 """
+import datetime
 import glob
 import json
 import os
 import re
-import sys
 import unicodedata
 
 import openpyxl
@@ -37,63 +56,59 @@ import geopandas as gpd
 from shapely.geometry import mapping
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-OS_DIR = os.path.join(BASE, 'fichas', 'OS')
-CAMADAS_DIR = os.path.join(BASE, 'camadas')  # cópia própria (repo separado, sem depender de web - fichas)
+CAMADAS_DIR = os.path.join(BASE, 'camadas')
 DADOS_DIR = os.path.join(BASE, 'dados')
 EPSG_METRICO = 31982  # SIRGAS 2000 / UTM 22S — mesmo do geoportal principal
+
+# Pasta compartilhada do órgão (Google Drive montado como G:\) — se a usuária
+# trocar de computador ou o Drive remapear a letra, ajustar aqui.
+BASE_SISTEMA = (
+    r'G:\.shortcut-targets-by-id\16Cw6zdJvWIidBLYdaIQIh6ITuwcbe6d8'
+    r'\SISTEMA_AGETO\MANUTENÇÃO RODOVIÁRIA'
+)
 
 # restauração (chave) -> manutenção/geográfico (valor) — mesma área física.
 MAPA_REGIAO_GEOGRAFICA = {14: 1, 15: 2, 16: 3, 22: 11, 23: 12, 24: 13}
 REGIOES_RESTAURACAO = set(MAPA_REGIAO_GEOGRAFICA.keys())
 
-# A planilha só guarda o MÊS na "DATA EMISSÃO" ("Janeiro", sem ano) — nenhuma
-# coluna tem o ano real. A 1ª tentativa foi inferir o ano pelo sufixo ".AAAA"
-# do número do contrato (assumindo que o contrato só emite O.S.P. dentro do
-# próprio ano dele), mas a usuária confirmou que isso é FALSO: TODAS as
-# regiões (Lote 01 e Lote 04) têm emissão real em ANO_EMISSAO_ATUAL, não
-# importa o sufixo do contrato — contratos de manutenção/restauração
-# continuam emitindo O.S.P. anos depois de assinados (vigência mais longa
-# que 1 ano). Sem outra fonte de ano na planilha, usa esse valor fixo pra
-# tudo — se isso mudar nalgum lote futuro, rever aqui.
-ANO_EMISSAO_ATUAL = 2026
+# Número do lote -> nome(s) de pasta dentro de BASE_SISTEMA. A maioria é só
+# "LOTE XX", mas algumas ganharam sufixo com o nome da empresa (confirmado
+# variar com o tempo) — por isso usa glob "LOTE XX*" em vez de nome fixo,
+# EXCETO a Região 3 que são dois bancos de verdade (não é só sufixo
+# cosmético, são dois contratos/empresas diferentes) — lista explícita.
+PASTAS_REGIAO_3 = ['LOTE 03 - ETICA', 'LOTE 03 - LUCENA']
 
+MESES_ORDEM = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+               'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 MESES_PT = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
             7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
+# "ABRIL" (sem acento perdido — Ç/Ã já vêm certos do Excel, só precisa casar
+# maiúsculas) -> nome bonito pra exibição.
+MESES_COMPLETO_MAP = {nome.upper(): nome for nome in MESES_ORDEM}
 
-# Abreviação (3 letras, como vem na coluna CRONOGRAMA, ex. "ago/set") -> nome
-# completo do mês + índice (0-based) — usado só pra montar `meses_cronograma`.
-MESES_ABREV = {
-    'JAN': ('Janeiro', 0), 'FEV': ('Fevereiro', 1), 'MAR': ('Março', 2), 'ABR': ('Abril', 3),
-    'MAI': ('Maio', 4), 'JUN': ('Junho', 5), 'JUL': ('Julho', 6), 'AGO': ('Agosto', 7),
-    'SET': ('Setembro', 8), 'OUT': ('Outubro', 9), 'NOV': ('Novembro', 10), 'DEZ': ('Dezembro', 11),
+# Vocabulário de SITUAÇÃO do banco (tudo maiúsculo) -> rótulo usado no
+# geoportal (mesmo Título Capitalizado de sempre). "CORREÇÃO SUPER" só
+# aparece na Região 13 — tratado como sinônimo de "Correção Fiscal" até a
+# usuária dizer o contrário. "LIBERADA"/"PARA EMISSÃO" são situações novas
+# que a planilha antiga não tinha (ver CORES_SITUACAO/ICONES_SITUACAO no
+# index.html, também atualizados).
+## Chaves SEM acento de propósito — são comparadas contra _norm(), que
+## sempre tira acento antes de comparar (ver _norm()). Já tropecei nisso:
+## 1ª versão tinha as chaves acentuadas e metade dos status (os com
+## acento) caía no fallback "usa o texto original", vazando "CONCLUÍDA"
+## etc. em maiúsculo pro frontend em vez de "Concluída".
+STATUS_MAP = {
+    'EM ELABORACAO': 'Em elaboração',
+    'EM ANDAMENTO': 'Em andamento',
+    'CONCLUIDA': 'Concluída',
+    'JUSTIFICADA': 'Justificada',
+    'CANCELADA': 'Cancelada',
+    'CORRECAO FISCAL': 'Correção Fiscal',
+    'CORRECAO SUPER': 'Correção Fiscal',
+    'ANALISE GESTOR': 'Análise Gestor',
+    'LIBERADA': 'Liberada',
+    'PARA EMISSAO': 'Para Emissão',
 }
-
-
-def parse_meses_cronograma(cronograma_raw, ano_base):
-    """CRONOGRAMA é tipo "ago/set" ou "jul/ago/set" — o(s) mês(es) em que a
-    execução está PREVISTA, sempre andando pra frente a partir do mês de
-    emissão (não é sub/superconjunto de DATA EMISSÃO, é informação adicional:
-    uma O.S.P. emitida em Agosto com cronograma "ago/set" deve aparecer tanto
-    no filtro de Agosto quanto no de Setembro). Sem ano na planilha — usa o
-    mesmo ano_base de DATA EMISSÃO (ANO_EMISSAO_ATUAL) e só avança o ano se
-    um token "voltar" no calendário em relação ao anterior (virada de
-    ano-civil no meio do cronograma; não visto nos dados até agora, mas a
-    regra fica correta se acontecer)."""
-    if not cronograma_raw or not isinstance(cronograma_raw, str) or ano_base is None:
-        return []
-    resultado = []
-    ano = ano_base
-    idx_anterior = None
-    for token in cronograma_raw.split('/'):
-        info = MESES_ABREV.get(_norm(token)[:3])
-        if not info:
-            continue
-        nome, idx = info
-        if idx_anterior is not None and idx < idx_anterior:
-            ano += 1
-        resultado.append(f'{nome}/{ano}')
-        idx_anterior = idx
-    return resultado
 
 qa_msgs = []
 
@@ -104,7 +119,9 @@ def qa(msg):
 
 
 def _norm(s):
-    """Maiúsculas, sem acento, sem quebra de linha, espaços colapsados."""
+    """Maiúsculas, sem acento, sem quebra de linha, espaços colapsados —
+    só pra COMPARAR nomes de coluna/aba (nunca usar o resultado como texto
+    de exibição, perde acentuação)."""
     if s is None:
         return ''
     s = str(s)
@@ -113,20 +130,72 @@ def _norm(s):
     return s
 
 
-def _achar_cabecalho(ws, texto_norm, linhas=range(1, 6)):
-    for r in linhas:
-        for c in range(1, ws.max_column + 1):
-            v = ws.cell(row=r, column=c).value
-            if v and texto_norm in _norm(v):
-                return r, c
-    return None
+def _mapa_colunas(ws, linha_cabecalho=1):
+    cols = {}
+    for c in range(1, ws.max_column + 1):
+        titulo = _norm(ws.cell(row=linha_cabecalho, column=c).value)
+        if titulo and titulo not in cols:  # primeira ocorrência vence (colunas duplicadas/vazias no fim)
+            cols[titulo] = c
+    return cols
+
+
+def _float_br(v):
+    """Número que pode vir float/int de verdade OU string com vírgula
+    decimal brasileira ("9,25") — confirmado os dois formatos no mesmo
+    banco, até na mesma coluna."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        return float(str(v).strip().replace(',', '.'))
+    except ValueError:
+        return None
+
+
+def _int_seguro(v):
+    if v is None:
+        return None
+    try:
+        return int(_float_br(v))
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_mes_ano(valor):
+    """datetime real OU texto "ABRIL-2026"/"ABRIL/2026" (confirmado os dois
+    separadores, hífen na BD_OSP e barra na BD_MED) -> (mês completo bonito,
+    ano) ou (None, None) se não reconhecer."""
+    if isinstance(valor, datetime.datetime):
+        return MESES_ORDEM[valor.month - 1], valor.year
+    if isinstance(valor, str) and valor.strip():
+        m = re.match(r'^([A-ZÀ-Ü]+)[-/\s]+(\d{4})$', valor.strip().upper())
+        if m:
+            nome = MESES_COMPLETO_MAP.get(m.group(1))
+            if nome:
+                return nome, int(m.group(2))
+    return None, None
+
+
+MESES_ABREV_MINUSCULO = {nome: nome[:3].lower() for nome in MESES_ORDEM}
+
+
+def _cronograma_legado(meses_cronograma):
+    """Reconstrói o texto curto "abr/mai/jun" (formato que o índice.html já
+    sabe exibir no card de detalhe) a partir dos meses reais de medição —
+    não é mais um cronograma PLANEJADO (o banco novo guarda isso de um jeito
+    bem mais complexo, por subgrupo de serviço e percentual, sem
+    equivalência direta ao "mês a mês" simples de antes), é a EXECUÇÃO real."""
+    vistos = []
+    for mes_ano in meses_cronograma:
+        abrev = MESES_ABREV_MINUSCULO.get(mes_ano.split('/')[0])
+        if abrev and abrev not in vistos:
+            vistos.append(abrev)
+    return '/'.join(vistos)
 
 
 # ---------------------------------------------------------------------
 # Geometria: camadas/R<região>_TRECHOS.shp, agrupada pelo campo Id.
-# Reaproveita o mesmo shapefile que converter_fichas.py usa (uma linha por
-# S.R.E.) — aqui não corta por km, pega a linha inteira de cada S.R.E. que
-# pertence ao trecho.
 # ---------------------------------------------------------------------
 _cache_trechos = {}
 
@@ -162,215 +231,317 @@ def carregar_trechos_regiao(regiao_num):
 
 
 # ---------------------------------------------------------------------
-# Leitura das abas "REGIÃO XX - HISTÓRICO" — medição mensal por O.S.P.
-# (VALOR PREVISTO/TOTAL MEDIDO/SALDO/% já vêm calculados pela planilha;
-# aqui só lemos, não recalculamos). Chave: número da O.S.P. dentro da
-# mesma aba de região (o "N°" da planilha) — histórico não guarda o
-# CONTRATO, mas OSP já é único dentro da região/planilha.
+# CONFIG_CONTRATO — tabela chave/valor (coluna A = campo, coluna B = valor).
+# Número do contrato = CodigoContrato (zero-padded a 3 dígitos — o banco
+# às vezes guarda isso como int puro, perdendo o zero à esquerda, ex. "49"
+# em vez de "049"; :03d restaura sem risco pros códigos de 4 dígitos como
+# "1452"/"1151", que não são padded, só maiores mesmo) + "." + AnoContrato.
 # ---------------------------------------------------------------------
-def parse_historico_os(wb, regiao_num_planilha):
-    nome_aba = f'REGIÃO {regiao_num_planilha:02d} - HISTÓRICO'
-    if nome_aba not in wb.sheetnames:
+def ler_contrato(wb):
+    ws = wb['CONFIG_CONTRATO']
+    config = {}
+    for r in range(1, ws.max_row + 1):
+        campo = ws.cell(row=r, column=1).value
+        if campo:
+            config[str(campo).strip()] = ws.cell(row=r, column=2).value
+    codigo = config.get('CodigoContrato')
+    ano = config.get('AnoContrato')
+    if codigo is None or ano is None:
+        return None
+    return f'{int(_float_br(codigo)):03d}.{int(_float_br(ano))}'
+
+
+# ---------------------------------------------------------------------
+# ORCAMENTO_PADRAO (catálogo de preços) + ITENS_OSP (matriz item x O.S.P.)
+# -> "serviço" composto por O.S.P. (ex. "Roçada / Tapa-Buraco CAE").
+#
+# ITENS_OSP: linha 1 tem números de O.S.P. como cabeçalho de coluna (a
+# partir da coluna D); linhas a partir da 1ª com código tipo "X.X" ou
+# "X.X.X" na coluna A têm a QUANTIDADE daquele item em cada O.S.P. O código
+# da coluna A cruza com ORCAMENTO_PADRAO.Subitem (NÃO com "Código" nem com
+# Item+Subitem concatenado — testado e confirmado: só Subitem bate, e só
+# as linhas com Agrupador="ITEM" têm descrição de serviço de verdade;
+# GRUPO/SUBGRUPO são só os totais de rollup, ignorados aqui).
+# ---------------------------------------------------------------------
+PADRAO_CODIGO_ITEM = re.compile(r'^\d+(\.\d+)+$')
+
+
+def carregar_catalogo_itens(wb):
+    if 'ORCAMENTO_PADRAO' not in wb.sheetnames:
         return {}
-    ws = wb[nome_aba]
-
-    # Colunas fixas: B=ID, C=OSP, D=CRONOGRAMA, E=VALOR PREVISTO,
-    # F=TOTAL MEDIDO, G=SALDO, H=%, I=SITUAÇÃO FINAL, depois 12 pares
-    # (VALOR MEDIDO, SITUAÇÃO) — um por mês, com o mês em datetime na
-    # linha 2 (célula mesclada com a coluna de SITUAÇÃO).
-    meses_cols = []
-    for c in range(10, 34, 2):
-        dt = ws.cell(row=2, column=c).value
-        meses_cols.append((c, dt.month if dt else None))
-
-    def num(v):
-        return v if isinstance(v, (int, float)) else None
-
-    resultado = {}
-    for r in range(4, ws.max_row + 1):
-        osp = ws.cell(row=r, column=3).value
-        if not isinstance(osp, (int, float)) or osp == 0:
+    ws = wb['ORCAMENTO_PADRAO']
+    cols = _mapa_colunas(ws)
+    col_agrupador, col_subitem, col_descricao = cols.get('AGRUPADOR'), cols.get('SUBITEM'), cols.get('DESCRICAO')
+    if not (col_agrupador and col_subitem and col_descricao):
+        return {}
+    catalogo = {}
+    for r in range(2, ws.max_row + 1):
+        if _norm(ws.cell(row=r, column=col_agrupador).value) != 'ITEM':
             continue
-        situacao_final = ws.cell(row=r, column=9).value
-        medido_mensal = []
-        for col_valor, mes_num in meses_cols:
-            if mes_num is None:
-                continue
-            v = num(ws.cell(row=r, column=col_valor).value) or 0
-            medido_mensal.append({'mes': MESES_PT[mes_num], 'valor': v})
-        resultado[int(osp)] = {
-            'valor_executado': num(ws.cell(row=r, column=6).value) or 0,
-            'saldo': num(ws.cell(row=r, column=7).value),
-            'pct_executado': num(ws.cell(row=r, column=8).value),  # None se #DIV/0! etc.
-            'situacao_final': str(situacao_final).strip() if situacao_final not in (None, '', '-') else None,
-            'medido_mensal': medido_mensal,
-        }
+        subitem = ws.cell(row=r, column=col_subitem).value
+        descricao = ws.cell(row=r, column=col_descricao).value
+        if subitem is None or not descricao:
+            continue
+        catalogo[str(subitem).strip()] = str(descricao).strip()
+    return catalogo
+
+
+def carregar_servicos_por_osp(wb, catalogo):
+    if 'ITENS_OSP' not in wb.sheetnames or not catalogo:
+        return {}
+    ws = wb['ITENS_OSP']
+    osp_por_coluna = {}
+    for c in range(4, ws.max_column + 1):
+        osp = _int_seguro(ws.cell(row=1, column=c).value)
+        if osp is not None:
+            osp_por_coluna[c] = osp
+
+    primeira_linha_item = None
+    for r in range(1, ws.max_row + 1):
+        v = ws.cell(row=r, column=1).value
+        if v is not None and PADRAO_CODIGO_ITEM.match(str(v).strip()):
+            primeira_linha_item = r
+            break
+    if primeira_linha_item is None or not osp_por_coluna:
+        return {}
+
+    servicos = {}
+    for r in range(primeira_linha_item, ws.max_row + 1):
+        codigo_raw = ws.cell(row=r, column=1).value
+        if codigo_raw is None:
+            continue
+        descricao = catalogo.get(str(codigo_raw).strip())
+        if not descricao:
+            continue  # rollup de GRUPO/SUBGRUPO ou código não catalogado
+        for c, osp in osp_por_coluna.items():
+            qtd = _float_br(ws.cell(row=r, column=c).value)
+            if qtd and qtd > 0:
+                servicos.setdefault(osp, []).append(descricao)
+
+    # O banco novo é bem mais granular que a planilha antiga (O.S.P. com 10+
+    # itens de orçamento, cada descrição já comprida sozinha — algumas
+    # passam de 100 caracteres) — juntar tudo vira um texto ilegível
+    # (quebrou o gráfico de ranking "Por serviço" mesmo limitando a 3
+    # itens inteiros). Mostra só os 2 primeiros itens distintos, cada um
+    # cortado em ~45 caracteres, + "(+N itens)" quando sobrar mais.
+    resultado = {}
+    for osp, descs in servicos.items():
+        unicos = list(dict.fromkeys(descs))  # remove duplicata preservando ordem
+        curtos = [d if len(d) <= 45 else d[:42].rstrip() + '...' for d in unicos[:2]]
+        texto = ' / '.join(curtos)
+        if len(unicos) > 2:
+            texto += f' (+{len(unicos) - 2} itens)'
+        resultado[osp] = texto
     return resultado
 
 
 # ---------------------------------------------------------------------
-# Leitura das abas "REGIÃO XX - RESUMO"
+# BD_MED — uma linha por O.S.P. por MÊS medido (série real de execução,
+# confirmado com exemplo de 3 meses seguidos pra mesma O.S.P.). Vira:
+#   - meses_cronograma: todo (mês/ano) em que essa O.S.P. teve medição —
+#     usado no filtro de Mês (mesesDaEntrada() no index.html).
+#   - medido_mensal: grade fixa Jan..Dez (mesmo formato de antes, pro KPI
+#     "executado no mês"/"acumulado" do Painel Executivo continuar
+#     funcionando sem mudar o index.html) — soma por NOME do mês,
+#     ignorando ano (só relevante quando há 1 ano de medição ativo, que é
+#     o caso de hoje; se algum dia cruzar virada de ano no meio da mesma
+#     O.S.P., juntaria os dois anos no mesmo slot — não visto ainda).
 # ---------------------------------------------------------------------
-def parse_planilha_os(caminho):
-    print(f'Lendo {os.path.basename(caminho)} ...')
+def carregar_medicoes(wb):
+    if 'BD_MED' not in wb.sheetnames:
+        return {}
+    ws = wb['BD_MED']
+    cols = _mapa_colunas(ws)
+    col_osp, col_data, col_valor = cols.get('BD_OSP'), cols.get('DATA'), cols.get('MEDICAO 1')
+    if not (col_osp and col_data):
+        return {}
+    por_osp = {}
+    for r in range(2, ws.max_row + 1):
+        osp = _int_seguro(ws.cell(row=r, column=col_osp).value)
+        if osp is None:
+            continue
+        mes_nome, ano = _parse_mes_ano(ws.cell(row=r, column=col_data).value)
+        if mes_nome is None:
+            continue
+        valor = _float_br(ws.cell(row=r, column=col_valor).value) if col_valor else None
+        por_osp.setdefault(osp, []).append({'mes': mes_nome, 'ano': ano, 'valor': valor or 0})
+    for registros in por_osp.values():
+        registros.sort(key=lambda m: (m['ano'], MESES_ORDEM.index(m['mes'])))
+    return por_osp
+
+
+def montar_medido_mensal(registros):
+    """Grade fixa Jan..Dez — mesmo formato consumido por atualizarKpisMes()
+    no index.html desde a época da aba HISTÓRICO."""
+    soma_por_mes = {nome: 0 for nome in MESES_ORDEM}
+    for reg in registros:
+        soma_por_mes[reg['mes']] += reg['valor']
+    return [{'mes': MESES_PT[i + 1], 'valor': soma_por_mes[nome]} for i, nome in enumerate(MESES_ORDEM)]
+
+
+def montar_meses_cronograma(registros):
+    vistos = {}
+    for reg in registros:
+        chave = f"{reg['mes']}/{reg['ano']}"
+        vistos[chave] = True
+    return sorted(vistos.keys(), key=lambda s: (int(s.split('/')[1]), MESES_ORDEM.index(s.split('/')[0])))
+
+
+# ---------------------------------------------------------------------
+# BD_OSP — uma linha por O.S.P.+trecho. Fonte principal: data de emissão,
+# trecho, situação, valor previsto/executado.
+# ---------------------------------------------------------------------
+def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
+    print(f'Lendo {os.path.basename(os.path.dirname(caminho))}/{os.path.basename(caminho)} ...')
     wb = openpyxl.load_workbook(caminho, data_only=True, keep_vba=False)
-    resultados_por_regiao = {}  # 'R1' -> [feature, feature, ...]
-    cache_historico = {}  # regiao_num_planilha -> {osp: {...}}
 
-    for nome_aba in wb.sheetnames:
-        if 'RESUMO' not in _norm(nome_aba):
+    contrato = ler_contrato(wb)
+    if not contrato:
+        qa(f'{caminho}: CONFIG_CONTRATO sem CodigoContrato/AnoContrato — arquivo ignorado')
+        return
+
+    if 'BD_OSP' not in wb.sheetnames:
+        qa(f'{caminho}: aba BD_OSP não encontrada — arquivo ignorado')
+        return
+    ws = wb['BD_OSP']
+    cols = _mapa_colunas(ws)
+    obrigatorias = ['BD_OSP', 'DATA', 'TRECHO_N', 'DESCRICAO', 'STATUS', 'VALOR', 'MEDIDO']
+    if not all(c in cols for c in obrigatorias):
+        qa(f'{caminho}: aba BD_OSP sem as colunas esperadas (achadas: {sorted(cols.keys())}) — arquivo ignorado')
+        return
+
+    catalogo_itens = carregar_catalogo_itens(wb)
+    servicos_por_osp = carregar_servicos_por_osp(wb, catalogo_itens)
+    medicoes_por_osp = carregar_medicoes(wb)
+
+    tipo_servico = 'restauracao' if regiao_num_planilha in REGIOES_RESTAURACAO else 'manutencao'
+    regiao_geo = MAPA_REGIAO_GEOGRAFICA.get(regiao_num_planilha, regiao_num_planilha)
+    regiao_geo_label = f'R{regiao_geo}'
+
+    n_lidos = n_pulados_sem_trecho = n_sem_geometria = 0
+
+    for r in range(2, ws.max_row + 1):
+        osp = _int_seguro(ws.cell(row=r, column=cols['BD_OSP']).value)
+        if osp is None:
             continue
-        ws = wb[nome_aba]
 
-        pos_id = _achar_cabecalho(ws, 'ID')
-        pos_situacao = _achar_cabecalho(ws, 'SITUACAO')
-        if not (pos_id and pos_situacao):
-            print(f'  [aviso] aba "{nome_aba}" não parece uma aba de resumo de O.S.P. — pulando')
-            continue
-        linha_cab, col_id = pos_id
-        cols = {}
-        for c in range(1, ws.max_column + 1):
-            titulo = _norm(ws.cell(row=linha_cab, column=c).value)
-            if titulo:
-                cols[titulo] = c
+        trecho_num = _int_seguro(ws.cell(row=r, column=cols['TRECHO_N']).value)
+        trecho_nome = ws.cell(row=r, column=cols['DESCRICAO']).value
+        sem_trecho_cadastrado = trecho_num is None or trecho_num == 0
+        if sem_trecho_cadastrado:
+            n_pulados_sem_trecho += 1
+            trecho_num = None
 
-        def valor(row, *chaves):
-            for k in chaves:
-                if k in cols:
-                    return ws.cell(row=row, column=cols[k]).value
-            return None
+        geoms = None
+        if not sem_trecho_cadastrado:
+            geoms = carregar_trechos_regiao(regiao_geo).get(trecho_num)
+            if not geoms:
+                qa(f'{regiao_geo_label} (via {os.path.basename(caminho)}): Trecho {trecho_num} '
+                   f'({trecho_nome}) não encontrado no shapefile R{regiao_geo}_TRECHOS.shp — '
+                   f'mantido na lista/KPIs, sem geometria no mapa')
+                n_sem_geometria += 1
 
-        n_lidos = 0
-        n_pulados_sem_trecho = 0
-        n_sem_geometria = 0
+        mes_nome, ano = _parse_mes_ano(ws.cell(row=r, column=cols['DATA']).value)
+        data_emissao = f'{mes_nome}/{ano}' if mes_nome else None
 
-        for r in range(linha_cab + 1, ws.max_row + 1):
-            osp = valor(r, 'OSP')
-            regiao_txt = valor(r, 'REGIAO')
-            if osp in (None, '', 0) or regiao_txt in (None, ''):
-                continue
-            if isinstance(osp, str) and 'REF' in osp.upper():
-                qa(f'{nome_aba}, linha {r}: registro com erro de fórmula (#REF!) na planilha — pulando')
-                continue
+        registros_med = medicoes_por_osp.get(osp, [])
+        meses_cronograma = montar_meses_cronograma(registros_med)
+        medido_mensal = montar_medido_mensal(registros_med)
 
-            m = re.search(r'(\d+)', str(regiao_txt))
-            if not m:
-                continue
-            regiao_num_planilha = int(m.group(1))
-            tipo_servico = 'restauracao' if regiao_num_planilha in REGIOES_RESTAURACAO else 'manutencao'
-            regiao_geo = MAPA_REGIAO_GEOGRAFICA.get(regiao_num_planilha, regiao_num_planilha)
-            regiao_geo_label = f'R{regiao_geo}'
+        situacao_raw = ws.cell(row=r, column=cols['STATUS']).value
+        situacao_chave = _norm(situacao_raw)
+        situacao = STATUS_MAP.get(situacao_chave) or (
+            'Não informada' if situacao_chave in ('', '0') else str(situacao_raw).strip()
+        )
 
-            trecho_num = valor(r, 'N TRECHO')
-            trecho_nome = valor(r, 'TRECHO')
-            sem_trecho_cadastrado = not isinstance(trecho_num, (int, float)) or trecho_num in (0,) or (
-                isinstance(trecho_nome, str) and 'NAO CADASTRADO' in _norm(trecho_nome)
-            )
-            if sem_trecho_cadastrado:
-                n_pulados_sem_trecho += 1
-                trecho_num = None
-            else:
-                trecho_num = int(trecho_num)
+        valor_previsto = _float_br(ws.cell(row=r, column=cols['VALOR']).value) or 0
+        valor_executado = _float_br(ws.cell(row=r, column=cols['MEDIDO']).value) or 0
 
-            situacao = valor(r, 'SITUACAO')
-            situacao = str(situacao).strip() if situacao not in (None, '', 0) else 'Não informada'
+        teve_med_justificada = cols.get('TEVE MED JUSTIFICADA')
+        observacao = None
+        if teve_med_justificada and _norm(ws.cell(row=r, column=teve_med_justificada).value) == 'SIM':
+            observacao = 'Teve medição justificada'
 
-            if regiao_num_planilha not in cache_historico:
-                cache_historico[regiao_num_planilha] = parse_historico_os(wb, regiao_num_planilha)
-            hist = cache_historico[regiao_num_planilha].get(int(osp)) if isinstance(osp, (int, float)) else None
+        props = {
+            'regiao': regiao_geo_label,
+            'regiao_os': f'R{regiao_num_planilha:02d}',
+            'tipo_servico': tipo_servico,
+            'contrato': contrato,
+            'osp': osp,
+            'data_emissao': data_emissao,
+            'cronograma': _cronograma_legado(meses_cronograma),
+            'meses_cronograma': meses_cronograma,
+            'trecho_num': trecho_num,
+            'trecho_nome': trecho_nome,
+            'servico': servicos_por_osp.get(osp),
+            'valor_previsto': valor_previsto,
+            'situacao': situacao,
+            'observacao': observacao,
+            'valor_executado': valor_executado,
+            'saldo': valor_previsto - valor_executado,
+            'pct_executado': (valor_executado / valor_previsto * 100) if valor_previsto > 0 else None,
+            'situacao_final': situacao,
+            'medido_mensal': medido_mensal,
+        }
 
-            # A O.S.P. é um registro administrativo real mesmo quando não dá pra
-            # desenhar no mapa (sem trecho cadastrado ainda, ou trecho não bate
-            # com o shapefile) — ela CONTINUA entrando na lista/KPIs/gráficos
-            # (senão os totais do geoportal nunca batem com o dashboard da
-            # planilha), só não ganha geometria. Mesmo critério já usado no
-            # geoportal de fichas (ver [[geoportal-fichas-inspecao]]).
-            geoms = None
-            if not sem_trecho_cadastrado:
-                geoms = carregar_trechos_regiao(regiao_geo).get(trecho_num)
-                if not geoms:
-                    qa(f'{regiao_geo_label} (via {nome_aba}): Trecho {trecho_num} ({trecho_nome}) não encontrado '
-                       f'no shapefile R{regiao_geo}_TRECHOS.shp — mantido na lista/KPIs, sem geometria no mapa')
-                    n_sem_geometria += 1
+        alvo = (resultados_por_regiao.setdefault(regiao_geo_label, []))
+        if geoms:
+            for geom in geoms:
+                alvo.append({'type': 'Feature', 'geometry': mapping(geom), 'properties': props})
+        else:
+            alvo.append({'type': 'Feature', 'geometry': None, 'properties': props})
+        n_lidos += 1
 
-            contrato = valor(r, 'CONTRATO')
-            # A planilha só guarda o MÊS na "DATA EMISSÃO" ("Janeiro", sem ano).
-            # Ano vem de ANO_EMISSAO_ATUAL (ver comentário na constante acima) —
-            # NÃO do número do contrato, que não reflete o ano real de emissão.
-            mes_emissao = valor(r, 'DATA EMISSAO')
-            if mes_emissao and mes_emissao != '-':
-                data_emissao = f'{mes_emissao}/{ANO_EMISSAO_ATUAL}'
-            else:
-                data_emissao = mes_emissao
-            cronograma_raw = valor(r, 'CRONOGRAMA')
-            meses_cronograma = parse_meses_cronograma(cronograma_raw, ANO_EMISSAO_ATUAL)
+    print(f'  {os.path.basename(caminho)}: {n_lidos} O.S.P. lida(s), {n_pulados_sem_trecho} sem trecho cadastrado ainda, '
+          f'{n_sem_geometria} sem geometria no shapefile')
 
-            props = {
-                'regiao': regiao_geo_label,
-                'regiao_os': f'R{regiao_num_planilha:02d}',
-                'tipo_servico': tipo_servico,
-                'contrato': contrato,
-                'osp': osp,
-                'data_emissao': data_emissao,
-                'cronograma': cronograma_raw,
-                # Mês(es) em que a EXECUÇÃO está prevista (pode ser vários,
-                # ex. "ago/set" -> ["Agosto/2025","Setembro/2025"]) — usado
-                # pra filtro de mês junto com data_emissao, não no lugar dele
-                # (ver parse_meses_cronograma).
-                'meses_cronograma': meses_cronograma,
-                'trecho_num': trecho_num,
-                'trecho_nome': trecho_nome,
-                'servico': valor(r, 'SERVICO'),
-                'valor_previsto': valor(r, 'VALOR PREVISTO') or 0,
-                'situacao': situacao,
-                'observacao': valor(r, 'OBSERVACAO'),
-                # Vindos da aba HISTÓRICO (medição mensal) — None/0 se a O.S.P.
-                # ainda não tem histórico lançado (ex. recém emitida).
-                'valor_executado': hist['valor_executado'] if hist else 0,
-                'saldo': hist['saldo'] if hist else None,
-                'pct_executado': hist['pct_executado'] if hist else None,
-                'situacao_final': hist['situacao_final'] if hist else None,
-                'medido_mensal': hist['medido_mensal'] if hist else [],
-            }
-            if geoms:
-                for geom in geoms:
-                    resultados_por_regiao.setdefault(regiao_geo_label, []).append({
-                        'type': 'Feature',
-                        'geometry': mapping(geom),
-                        'properties': props,
-                    })
-            else:
-                resultados_por_regiao.setdefault(regiao_geo_label, []).append({
-                    'type': 'Feature',
-                    'geometry': None,
-                    'properties': props,
-                })
-            n_lidos += 1
 
-        print(f'  {nome_aba}: {n_lidos} O.S.P. lida(s), {n_pulados_sem_trecho} sem trecho cadastrado ainda, '
-              f'{n_sem_geometria} sem geometria no shapefile')
+def pastas_do_lote(numero):
+    if numero == 3:
+        return [os.path.join(BASE_SISTEMA, nome) for nome in PASTAS_REGIAO_3]
+    candidatas = sorted(glob.glob(os.path.join(BASE_SISTEMA, f'LOTE {numero:02d}*')))
+    # Evita "LOTE 2X" casar com "LOTE 2" (sem zero) por engano — compara o
+    # número logo após "LOTE " caractere a caractere.
+    return [c for c in candidatas if re.match(rf'^LOTE 0*{numero}(\D|$)', os.path.basename(c))]
 
-    return resultados_por_regiao
+
+def arquivo_bd_da_pasta(pasta):
+    candidatos = [
+        f for f in glob.glob(os.path.join(pasta, 'BD_LOTE_*.xlsx'))
+        if not os.path.basename(f).startswith('~$') and 'COPIA' not in _norm(os.path.basename(f))
+    ]
+    if not candidatos:
+        qa(f'{pasta}: nenhum BD_LOTE_*.xlsx encontrado (ignorando "- Copia")')
+        return None
+    if len(candidatos) > 1:
+        qa(f'{pasta}: mais de um BD_LOTE_*.xlsx encontrado ({candidatos}) — usando o primeiro')
+    return candidatos[0]
 
 
 def main():
-    arquivos = sorted(
-        f for f in glob.glob(os.path.join(OS_DIR, '*.xls*'))
-        if not os.path.basename(f).startswith('~$')  # lock file do Excel (planilha aberta)
-    )
-    if not arquivos:
-        print(f'Nenhuma planilha de O.S.P. encontrada em {OS_DIR}')
+    if not os.path.isdir(BASE_SISTEMA):
+        print(f'Pasta do SISTEMA_AGETO não encontrada: {BASE_SISTEMA}')
+        print('Confirme se o Google Drive está montado em G:\\ e sincronizado.')
         return
 
-    geral = {}  # 'R1' -> [features]
-    for caminho in arquivos:
-        try:
-            parcial = parse_planilha_os(caminho)
-        except Exception as e:
-            qa(f'{os.path.basename(caminho)}: falha ao ler ({e}) — arquivo ignorado')
+    # Regiões de manutenção (1,2,3,11,12,13) + restauração (14,15,16,22,24)
+    # — 23 fica de fora, não existe banco ainda (ver topo do arquivo).
+    numeros_regiao = [1, 2, 3, 11, 12, 13, 14, 15, 16, 22, 24]
+
+    geral = {}
+    for numero in numeros_regiao:
+        pastas = pastas_do_lote(numero)
+        if not pastas:
+            qa(f'Região {numero}: nenhuma pasta "LOTE {numero:02d}*" encontrada — pulando')
             continue
-        for regiao, feats in parcial.items():
-            geral.setdefault(regiao, []).extend(feats)
+        for pasta in pastas:
+            caminho = arquivo_bd_da_pasta(pasta)
+            if not caminho:
+                continue
+            try:
+                processar_banco(caminho, numero, geral)
+            except Exception as e:
+                qa(f'{caminho}: falha ao ler ({e}) — arquivo ignorado')
 
     os.makedirs(DADOS_DIR, exist_ok=True)
     total_osp = 0
@@ -391,10 +562,7 @@ def main():
         f.write('window.MANIFEST_OS = ' + json.dumps(sorted(geral.keys()), ensure_ascii=False) + ';\n')
 
     with open(os.path.join(BASE, 'relatorio_qualidade_os.txt'), 'w', encoding='utf-8') as f:
-        if qa_msgs:
-            f.write('\n'.join(qa_msgs) + '\n')
-        else:
-            f.write('Nenhum problema encontrado.\n')
+        f.write('\n'.join(qa_msgs) + '\n' if qa_msgs else 'Nenhum problema encontrado.\n')
 
     print(f'\n{total_osp} O.S.P.+trecho no total, {len(qa_msgs)} observação(ões) — ver relatorio_qualidade_os.txt')
 

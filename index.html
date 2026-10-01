@@ -476,6 +476,9 @@ var CORES_SITUACAO = {
   'Concluída': '#0ca30c', 'Em andamento': '#2563EB', 'Em elaboração': '#64748B',
   'Justificada': '#94A3B8', 'Cancelada': '#d03b3b', 'Correção Fiscal': '#7C3AED',
   'Análise Gestor': '#D97706', 'Não informada': '#94A3B8',
+  // Novas desde a troca pro banco de dados do órgão (2026-10) — não
+  // existiam na planilha manual antiga.
+  'Liberada': '#0EA5E9', 'Para Emissão': '#CA8A04',
 };
 function corSituacao(s){ return CORES_SITUACAO[s] || '#94A3B8'; }
 // "-" na planilha não é uma situação de verdade (não está na lista oficial
@@ -488,6 +491,7 @@ var ICONES_SITUACAO = {
   'Concluída': '✅', 'Em andamento': '🔧', 'Em elaboração': '✏️',
   'Justificada': '📄', 'Cancelada': '🚫', 'Correção Fiscal': '💲',
   'Análise Gestor': '🔎', '-': '❔', 'Não informada': '❔',
+  'Liberada': '🔓', 'Para Emissão': '🆕',
 };
 function iconeSituacao(s){ return ICONES_SITUACAO[s] || ''; }
 // Ícone + rótulo prontos pra jogar dentro de um badge/pill.
@@ -521,8 +525,10 @@ var EMPRESA_POR_CONTRATO = {
   '009.2025': 'CONSÓRCIO RODOVIAS DO TOCANTINS',
   '051.2024': 'PRIMOR ENGENHARIA LTDA',
   '042.2025': 'CONSÓRCIO RODOVIAS DO TOCANTINS',
-  '043.2025': 'CONSÓRCIO RODOTINS',
-  '041.2025': 'SCR – SINALIZAÇÃO E CONSERVAÇÃO DE RODOVIAS LTDA',
+  '043.2025': 'CONSÓRCIO RODOTINS', // Região 23 — ainda não existe no banco oficial, mapeamento em espera
+  // Região 24: usuária confirmou em 2026-10 que o banco oficial (CONFIG_CONTRATO)
+  // está certo — contrato 1151.2026, não 041.2025/SCR como a planilha antiga tinha.
+  '1151.2026': 'ÉTICA CONSTRUTORA LTDA',
 };
 // "002.2025" -> "002.2025 · LUCENA INFRAESTRUTURA LTDA" (ou só o número, se a
 // empresa não estiver no mapeamento). Usar sempre para EXIBIÇÃO — o valor cru
