@@ -1,8 +1,9 @@
 # Geoportal RTA-MSI — Ordens de Serviço
 
-WebGIS Leaflet de página única com as **O.S.P. (Ordem de Serviço de Pagamento)** da
-planilha de Controle — mostra no mapa os trechos com O.S.P., coloridos por situação,
-com filtros e um Painel Executivo pra apresentação/relatório.
+WebGIS Leaflet de página única com as **O.S.P. (Ordem de Serviço de Pagamento)** —
+mostra no mapa os trechos com O.S.P., coloridos por situação, com filtros e um
+Painel Executivo pra apresentação/relatório. Dados vêm do banco de dados oficial
+do órgão (SISTEMA_AGETO) desde 2026-10 — ver seção "Fonte de dados" abaixo.
 
 Usuária: Fernanda (RTA Engenheiros Consultores). Responder sempre em português.
 
@@ -20,13 +21,71 @@ totalmente independente.
 | Arquivo/pasta | Papel |
 |---|---|
 | `index.html` | App inteiro (HTML+CSS+JS, sem build). CDN: Leaflet 1.9.4, Chart.js 4, html-to-image 1.11.13 (carregada sob demanda só na hora de exportar imagem) |
-| `converter_os.py` | Lê `fichas/OS/*.xlsm` + `camadas/R<n>_TRECHOS.shp` (campo `Id` = "N° TRECHO" da planilha), gera uma feature por linha do shapefile que bater com o trecho — geometria do trecho INTEIRO, sem corte por km (O.S.P. não referencia sub-trecho, diferente da ficha de inspeção) |
-| `fichas/OS/` | Planilha(s) de Controle de O.S.P., como chegam (ex. `Controle de OSPs LOTE 01.xlsm`) — **não editar**, só adicionar/atualizar arquivo aqui e rodar o converter de novo. **O converter lê TODOS os `.xls*` soltos aqui dentro e SOMA as O.S.P. de cada um por região** — pra atualizar a planilha, mover a versão antiga pra `fichas/OS/_anteriores/` (fora do glob) ANTES de colocar a nova, senão duplica tudo nos totais |
+| `converter_os.py` | Lê direto do banco oficial do órgão em `G:\...\SISTEMA_AGETO` (ver "Fonte de dados") + `camadas/R<n>_TRECHOS.shp` (campo `Id` = TRECHO_N da O.S.P.), gera uma feature por linha do shapefile que bater com o trecho — geometria do trecho INTEIRO, sem corte por km |
+| `fichas/OS/` | **Histórico** — planilhas manuais ("Controle de OSPs LOTE 01/04") usadas até 2026-10, antes da migração pro banco do órgão. Não lidas mais pelo converter; deixadas aqui só de arquivo/backup |
 | `dados/os_<REGIAO>.js` | Um GeoJSON (`window.DADOS_OS_REGIAO[regiao]`) por região **geográfica** (R1, R2, R3...) — não por competência, a O.S. não é mensal |
 | `dados/manifest_os.js` | Lista de regiões disponíveis (`window.MANIFEST_OS`) |
-| `relatorio_qualidade_os.txt` | Gerado a cada rodada (gitignored) — trecho não encontrado no shapefile, erro de fórmula (`#REF!`) na planilha etc. |
-| `camadas/` | Cópia de `R<n>_TRECHOS.shp` — só as regiões usadas aqui (R1/R2/R3 = Lote 1, R11/R12/R13 = Lote 4, ambos ativos) |
+| `relatorio_qualidade_os.txt` | Gerado a cada rodada (gitignored) — trecho não encontrado no shapefile, pasta/arquivo de região faltando etc. |
+| `camadas/` | Cópia de `R<n>_TRECHOS.shp` — R1/R2/R3 (Lote 1/2/3) + R11/R12/R13 (Lote 11/12/13), todas ativas |
 | `logo/` | Logos RTA + MSI |
+
+## Fonte de dados — banco oficial do órgão (SISTEMA_AGETO)
+
+Desde **2026-10-02**, `converter_os.py` lê direto de
+`G:\.shortcut-targets-by-id\16Cw6zdJvWIidBLYdaIQIh6ITuwcbe6d8\SISTEMA_AGETO\MANUTENÇÃO RODOVIÁRIA`
+(Google Drive da usuária, montado como `G:\` — **só funciona na máquina dela**
+com o Drive sincronizado; `BASE_SISTEMA` no topo do converter). Substituiu a
+planilha manual "Controle de OSPs" (`fichas/OS/`, mantida só de histórico) —
+essa planilha não tinha ano de emissão de verdade (só o mês) e tinha pelo
+menos 1 contrato errado (Região 24). Cada região tem uma pasta `LOTE XX` com
+um arquivo `BD_LOTE_XX.xlsx` (sistema de gestão real do órgão, não uma
+planilha feita pra nós) — abas relevantes:
+
+| Aba | Usada pra |
+|---|---|
+| `CONFIG_CONTRATO` | Contrato (`CodigoContrato` + "." + `AnoContrato`, zero-padded a 3 dígitos — `ler_contrato()`) |
+| `BD_OSP` | 1 linha por O.S.P.+trecho: DATA (emissão), TRECHO_N, DESCRIÇÃO, STATUS, VALOR, MEDIDO |
+| `ITENS_OSP` + `ORCAMENTO_PADRAO` | Reconstrói "serviço" — matriz item×O.S.P. cruzada com o catálogo de preços pela coluna **Subitem** (não "Código", não Item+Subitem — testado e confirmado). Só linhas `Agrupador="ITEM"` têm descrição de serviço real (GRUPO/SUBGRUPO são rollup) |
+| `BD_MED` | 1 linha por O.S.P. por MÊS medido (série real) — vira `medido_mensal` (grade fixa Jan..Dez) e `meses_cronograma` (meses em que teve medição de verdade) |
+
+**Particularidades confirmadas por investigação (não presumir, já foi conferido
+nas 12 regiões):**
+- **"Região 03" são 2 bancos separados**: `LOTE 03 - ETICA` (contrato
+  1452.2026) e `LOTE 03 - LUCENA` (contrato 002.2025) — mesma área física,
+  2 contratos. `pastas_do_lote(3)` retorna as duas, ambas alimentam R3.
+- **"Região 23" não existe** — sem pasta no Drive ainda. Fica de fora da
+  lista `numeros_regiao` em `main()` até aparecer.
+- **"Região 16" tem arquivo duplicado** (`BD_LOTE_16 - Copia.xlsx` solto na
+  pasta) — `arquivo_bd_da_pasta()` ignora qualquer nome com "COPIA".
+- **Tipos inconsistentes DENTRO do próprio banco** (mesma coluna, linhas
+  diferentes): número de O.S.P. ora string zero-padded (`"0073"`) ora int
+  puro (`73`); `EXT_KM` ora float ora string com vírgula brasileira
+  (`"9,25"`); `DATA` ora `datetime` real ora texto `"MÊS-ANO"`/`"MÊS/ANO"`.
+  `_float_br()`/`_int_seguro()`/`_parse_mes_ano()` tratam os dois formatos
+  em qualquer coluna nova que for ler daqui pra frente.
+- **Vocabulário de SITUAÇÃO tem mais valores que a planilha antiga**:
+  além de Em elaboração/Em andamento/Concluída/Justificada/Cancelada/
+  Correção Fiscal/Análise Gestor, o banco tem **Liberada** e **Para Emissão**
+  (novas, com cor/ícone em `CORES_SITUACAO`/`ICONES_SITUACAO`) e
+  **Correção Super** (só Região 13 — tratada como sinônimo de Correção
+  Fiscal em `STATUS_MAP`, confirmar com a usuária se não for o caso).
+  `STATUS_MAP` em `converter_os.py` usa chaves SEM acento (compara contra
+  `_norm()`, que sempre tira acento) — **cuidado**: a 1ª versão tinha
+  chaves acentuadas e metade dos status vazava em maiúsculo pro frontend.
+- **"Serviço" ficou bem mais granular** (O.S.P. pode ter 10+ itens de
+  orçamento, cada descrição já longa sozinha) — truncado aos 2 primeiros
+  itens distintos + "(+N itens)" (`carregar_servicos_por_osp()`) pra não
+  quebrar os gráficos do Painel Executivo (já tropecei nisso: sem limite
+  nenhum virou texto ilegível; limitando a 3 itens inteiros ainda estourava
+  a largura do ranking "Por serviço").
+- **Cronograma agora é a EXECUÇÃO real** (`meses_cronograma`/`cronograma`
+  vêm de `BD_MED`, não de um planejamento) — o banco tem uma aba
+  `BD_CRONOGRAMA` com cronograma PLANEJADO, mas em formato bem mais
+  complexo (percentual por subgrupo de serviço, não por mês simples) e sem
+  equivalência direta ao "ago/set" simples de antes — não usada.
+- `EMPRESA_POR_CONTRATO` (index.html) foi conferida contrato a contrato
+  contra `CONFIG_CONTRATO` de cada região em 2026-10 — todos batiam, EXCETO
+  a Região 24 (corrigida de 041.2025/SCR pra 1151.2026/ÉTICA CONSTRUTORA).
 
 ## Região de manutenção × restauração — mesma área física, contrato diferente
 
@@ -76,26 +135,18 @@ emitida em Agosto com CRONOGRAMA "ago/set" aparece nos dois meses sem
 precisar marcar os dois. Tipo e Contrato continuam seleção única (`<select>`
 normal) — só virou multi-seleção o que a usuária pediu explicitamente.
 
-## Ano de emissão — a planilha NÃO guarda ano em lugar nenhum
+## Ano de emissão — resolvido pela migração pro banco oficial
 
-A coluna "DATA EMISSÃO" só tem o mês por extenso ("Janeiro", sem ano), e
-"CRONOGRAMA" só tem abreviações de mês ("ago/set"), também sem ano. **Já
-tentamos inferir o ano pelo sufixo ".AAAA" do número do contrato** (ex.
-"051.2024" → 2024) — parecia razoável (contrato "dura ~1 ano"), mas a
-usuária confirmou em 2026-10 que é **FALSO**: o sufixo é só um número de
-identificação do contrato, não o ano real de emissão (contratos de
-manutenção/restauração têm vigência mais longa que 1 ano, continuam
-emitindo O.S.P. anos depois de assinados). Confirmação dela, literal:
-"as os da planilha são tudo de 2026, por mais que os contratos não seja" /
-"todas as regiões é 2026".
-
-`converter_os.py` usa hoje `ANO_EMISSAO_ATUAL` (constante, hoje = 2026)
-aplicada a TODA O.S.P., não importa região/lote/contrato — é a única fonte
-de ano disponível até a planilha ganhar uma coluna de verdade pra isso (ou a
-usuária avisar que mudou). **Se "ano de emissão" parecer estranho de novo,
-suspeitar primeiro de cache do navegador** (ver próxima seção) antes de
-mexer nessa lógica — ela é propositalmente simples agora (um valor fixo
-pra tudo), não tem mais regra por contrato pra quebrar.
+Histórico (relevante só se for entender commits antigos): a planilha manual
+"Controle de OSPs" só guardava o MÊS da emissão (texto, sem ano) — 1ª
+tentativa inferiu o ano pelo sufixo ".AAAA" do contrato, a usuária confirmou
+em 2026-10 que isso era **falso** (contrato dura mais que 1 ano, sufixo não
+reflete emissão real), então virou uma constante única `ANO_EMISSAO_ATUAL =
+2026` aplicada a tudo. **Essa constante não existe mais** — o banco oficial
+(`BD_OSP.DATA`) tem a data real (dia/mês/ano) de cada O.S.P., lida direto por
+`_parse_mes_ano()` (ver "Fonte de dados" acima). Se "ano de emissão" parecer
+estranho de novo, suspeitar primeiro de cache do navegador (ver próxima
+seção), depois conferir `BD_OSP.DATA` da O.S.P. em questão direto no banco.
 
 ## Cache dos dados (`dados/os_*.js`)
 
@@ -111,16 +162,17 @@ seguir o mesmo padrão.
 
 ## Situação da O.S.P.
 
-Vocabulário vem da aba "Tabelas Auxiliares" da planilha: `Em elaboração`,
-`Em andamento`, `Concluída`, `Justificada`, `Cancelada`, `Correção Fiscal`,
-`Análise Gestor`. Cores em `CORES_SITUACAO`, ícones em `ICONES_SITUACAO`
-(✅🔧✏️📄🚫💲), combinados em `rotuloComIcone()` pra exibição em pills/badges/legenda.
+Vocabulário vem do campo `STATUS` do banco (`BD_OSP`), mapeado em
+`STATUS_MAP` (converter_os.py) pro Título Capitalizado de sempre: `Em
+elaboração`, `Em andamento`, `Concluída`, `Justificada`, `Cancelada`,
+`Correção Fiscal` (inclui "Correção Super", só Região 13, tratada como
+sinônimo), `Análise Gestor`, `Liberada`, `Para Emissão` (as 2 últimas
+novas desde a migração pro banco, "Fonte de dados" acima). Cores em
+`CORES_SITUACAO`, ícones em `ICONES_SITUACAO`, combinados em
+`rotuloComIcone()` pra exibição em pills/badges/legenda.
 
-**"-" não é uma situação de verdade** — não está na lista oficial da planilha, é a
-célula SITUAÇÃO sem preencher ainda (algumas O.S.P. reais, com valor e trecho
-normais, simplesmente não tiveram a situação atualizada). Exibido como
-"Situação não informada" (`rotuloSituacao()`), mas o VALOR usado pra filtrar
-continua sendo o `"-"` cru vindo da planilha — só a exibição foi trocada.
+Valor cru `"0"` ou vazio vira `"Não informada"` — status espúrio visto na
+Região 14, provavelmente erro de digitação na fonte, não uma situação real.
 
 ## O.S.P. sem geometria — ainda contam nos KPIs/lista
 
@@ -161,7 +213,7 @@ sozinho a cada mudança, `atualizarDashboard()` chamado no fim de
   batendo % contra print da planilha — com elas dentro os % não fecham).
 - **Previsto × Executado por região** — agrupado por `regiao_os` (não `regiao`).
 - **Evolução mensal do valor medido** — soma `medido_mensal` (vindo da aba
-  HISTÓRICO da planilha) por mês, com acumulado; bate 100% com a fonte.
+  BD_MED do banco oficial — ver "Fonte de dados") por mês, com acumulado.
 - **Ranking Top 10** (toggle Por trecho / Por serviço / Por O.S.P.) — "Por serviço"
   agrupa pela string INTEIRA do campo Serviço (não separa por `/`, mesmo critério
   da tabela oficial "TOP 10 SERVIÇOS" da aba DETALHAMENTO da planilha — muitas
@@ -170,10 +222,9 @@ sozinho a cada mudança, `atualizarDashboard()` chamado no fim de
   Todos os 3 modos conferidos batendo valor a valor com as tabelas oficiais da
   planilha (DETALHAMENTO) ou recálculo independente.
 
-**BASE DASHBOARD (aba da planilha) não é fonte confiável** — as colunas auxiliares
-dela (que alimentariam os gráficos nativos do Excel) estão zeradas/quebradas
-(fórmula não recalculada). Prefira sempre recalcular a partir de RESUMO+HISTÓRICO
-e comparar contra as tabelas que SÃO confiáveis (DETALHAMENTO tem os Top 10 corretos).
+Histórico: quando a fonte era a planilha manual, a aba "BASE DASHBOARD" dela
+não era confiável (fórmulas quebradas) — não existe mais, só relevante pra
+entender commits antigos.
 
 ### Exportar imagem (📄 Exportar)
 
@@ -211,15 +262,14 @@ config `ordens-servico`, porta 8771).
 3. Importar o repo no Vercel (vercel.com → Add New Project) — deploy automático a
    cada push na `main`, igual aos outros geoportais da família
 
-## Lote 4 (Regiões 11/12/13 manutenção + 22/23/24 restauração)
+## Histórico: Regiões 11/12/13/22/24 (antigo "Lote 4")
 
-**Lançado em 2026-10-01** — "Controle de OSPs LOTE 04.xlsx" colocada pela
-usuária em `fichas/OS/` (convive com a planilha do Lote 01 sem conflito,
-regiões diferentes, sem sobreposição). Shapefiles e `MAPA_REGIAO_GEOGRAFICA`
-já estavam prontos desde o início do projeto. Total foi de 186 para 385 O.S.P.
-Contratos novos (049.2024, 009.2025, 051.2024, 042.2025, 043.2025, 041.2025)
-ainda sem empresa mapeada em `EMPRESA_POR_CONTRATO` (ver seção "Nome da
-empresa junto ao contrato" acima) — completar se a usuária pedir.
+Shapefiles e `MAPA_REGIAO_GEOGRAFICA` pra essas regiões já estavam prontos
+desde o início do projeto; os dados em si vieram primeiro de uma planilha
+manual separada ("Controle de OSPs LOTE 04.xlsx", 2026-10-01) e, 1 dia
+depois, da migração geral pro banco oficial (ver "Fonte de dados" acima) —
+hoje todas as regiões (antigo Lote 1 e Lote 4) vêm da mesma fonte, sem
+distinção de "lote" no código.
 
 ## Relação com outros projetos
 
