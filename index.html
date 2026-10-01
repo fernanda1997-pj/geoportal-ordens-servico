@@ -223,6 +223,11 @@
   .dash-card .dash-card-cabeca{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; margin-bottom:8px;}
   .dash-card h3{font-size:13px; color:var(--azul);}
   .dash-card .dash-canvas{position:relative; height:260px;}
+  /* Ranking tem até 10 barras horizontais com rótulo de serviço longo
+     (quebrado em várias linhas, ver quebrarRotuloGrafico()) — precisa de
+     mais altura que os outros gráficos (260px apertava demais, cortava o
+     texto). */
+  .dash-card .dash-canvas.dash-canvas-ranking{height:420px;}
   .dash-toggle{display:flex; gap:4px; flex-wrap:wrap;}
   .dash-toggle button{
     border:1px solid var(--borda); background:#fff; border-radius:6px; padding:4px 8px;
@@ -446,7 +451,7 @@
               <button data-ranking="osp">Por O.S.P.</button>
             </div>
           </div>
-          <div class="dash-canvas"><canvas id="chart-ranking"></canvas></div>
+          <div class="dash-canvas dash-canvas-ranking"><canvas id="chart-ranking"></canvas></div>
         </div>
       </div>
       <div class="dica nao-exportar" style="margin-top:16px;">
@@ -1022,6 +1027,17 @@ function descricaoFiltrosOS(){
   return base;
 }
 
+// Rótulos longos (ex. serviço composto "Reciclagem do pavimento e execução
+// de TSD / Microrrevestimento asfáltico 8 mm / Sinalização de Obras") saem
+// cortados no eixo do gráfico de ranking em vez de quebrar linha sozinhos.
+// Chart.js aceita um array de strings como rótulo multi-linha — quebra em
+// " / " (separador natural desses textos compostos) quando passa de ~28
+// caracteres; curtos (ex. "Trecho 123", "040.2024.0009") ficam como estão.
+function quebrarRotuloGrafico(label){
+  if(typeof label !== 'string' || label.length <= 28) return label;
+  return label.split(' / ');
+}
+
 function fmtReaisCompacto(v){
   // "R$ 2.000k" (juntando separador de milhar com "k") lia fácil como
   // "R$ 2.000" — troca por "mi" a partir de 1 milhão pra não confundir escala.
@@ -1218,9 +1234,18 @@ function renderGraficoRanking(entradas){
   destruirGrafico('ranking');
   graficos.ranking = new Chart(document.getElementById('chart-ranking'), {
     type:'bar',
-    data:{ labels: labels, datasets:[{ data: valores, backgroundColor:'#1E3A72', borderRadius:4 }] },
+    data:{ labels: labels.map(quebrarRotuloGrafico), datasets:[{ data: valores, backgroundColor:'#1E3A72', borderRadius:4 }] },
     options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      scales:{ x:{ ticks:{ callback: fmtReaisCompacto } } },
+      layout:{ padding:{ left:10 } },
+      scales:{
+        x:{ ticks:{ callback: fmtReaisCompacto } },
+        // Rótulo de serviço é longo mesmo quebrado em várias linhas — sem
+        // forçar uma largura mínima pro eixo Y, o Chart.js dá só o espaço
+        // que sobra do resto do gráfico (pouco numa tela estreita/card
+        // menor) e cada LINHA do rótulo quebrado sai cortada de novo.
+        y:{ ticks:{ autoSkip:false, font:{size:10} },
+          afterFit:function(scale){ scale.width = Math.min(260, scale.chart.width * 0.45); } },
+      },
       plugins:{ legend:{display:false},
         tooltip:{ callbacks:{ label:function(ctx){ return fmtReais(ctx.raw); } } } } },
   });
