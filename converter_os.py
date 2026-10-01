@@ -46,6 +46,16 @@ EPSG_METRICO = 31982  # SIRGAS 2000 / UTM 22S — mesmo do geoportal principal
 MAPA_REGIAO_GEOGRAFICA = {14: 1, 15: 2, 16: 3, 22: 11, 23: 12, 24: 13}
 REGIOES_RESTAURACAO = set(MAPA_REGIAO_GEOGRAFICA.keys())
 
+# O ano de emissão normalmente vem do sufixo ".AAAA" do número do contrato
+# (ver cálculo de `data_emissao` abaixo) — mas isso assume que o contrato só
+# emite O.S.P. dentro do próprio ano dele, o que NÃO vale pro Lote 04: a
+# usuária confirmou que toda emissão das 6 regiões do Lote 04 é de 2026, não
+# importa o que o número do contrato sugira (ex. 049.2024 e 051.2024 emitem
+# em 2026, não em 2024; 009.2025/042.2025/043.2025/041.2025 também são 2026,
+# não 2025). Contrato tem vigência mais longa que 1 ano nesse lote.
+REGIOES_LOTE_04 = {11, 12, 13, 22, 23, 24}
+ANO_EMISSAO_LOTE_04 = 2026
+
 MESES_PT = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
             7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
 
@@ -286,14 +296,22 @@ def parse_planilha_os(caminho):
             # A planilha só guarda o MÊS na "DATA EMISSÃO" ("Janeiro", sem ano) —
             # e o mesmo mês se repete em contratos de anos diferentes (ex.: R03
             # tem "Julho" tanto no contrato 002.2025 quanto no 1452.2026). O
-            # número do contrato sempre termina em ".AAAA" — usa isso como ano de
-            # emissão (o contrato dura ~1 ano, então o mês só pode ser daquele
-            # ano). Vira "Julho/2025" em vez de só "Julho", pra não misturar anos.
+            # número do contrato normalmente termina em ".AAAA" — usa isso como
+            # ano de emissão (regra que assume que o contrato dura ~1 ano, então
+            # o mês só pode ser daquele ano). Vira "Julho/2025" em vez de só
+            # "Julho", pra não misturar anos.
+            #
+            # EXCEÇÃO: Lote 04 (ver REGIOES_LOTE_04) — contratos de vigência mais
+            # longa, confirmados pela usuária como emitindo tudo em
+            # ANO_EMISSAO_LOTE_04 independente do sufixo do número do contrato.
             mes_emissao = valor(r, 'DATA EMISSAO')
-            m_ano = re.search(r'(\d{4})\s*$', str(contrato or ''))
-            ano_base = int(m_ano.group(1)) if m_ano else None
-            if mes_emissao and mes_emissao != '-' and m_ano:
-                data_emissao = f'{mes_emissao}/{m_ano.group(1)}'
+            if regiao_num_planilha in REGIOES_LOTE_04:
+                ano_base = ANO_EMISSAO_LOTE_04
+            else:
+                m_ano = re.search(r'(\d{4})\s*$', str(contrato or ''))
+                ano_base = int(m_ano.group(1)) if m_ano else None
+            if mes_emissao and mes_emissao != '-' and ano_base:
+                data_emissao = f'{mes_emissao}/{ano_base}'
             else:
                 data_emissao = mes_emissao
             cronograma_raw = valor(r, 'CRONOGRAMA')
