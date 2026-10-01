@@ -40,26 +40,26 @@
   }
   #os-busca-osp:focus{outline:2px solid var(--azul); outline-offset:-1px;}
 
-  /* Dropdown de Mês — fechado por padrão (select nativo multiple deixa a
-     caixa toda aberta o tempo todo, ocupando espaço demais na tela; aqui só
-     abre a lista de meses quando clica no botão, igual o popover de
-     Exportar do Painel Executivo). */
-  .dropdown-mes{position:relative;}
-  .btn-dropdown-mes{
+  /* Dropdown de múltipla escolha (Região, Mês) — fechado por padrão (select
+     nativo multiple deixa a caixa toda aberta o tempo todo, ocupando espaço
+     demais na tela; aqui só abre a lista quando clica no botão, igual o
+     popover de Exportar do Painel Executivo). */
+  .dropdown-check{position:relative;}
+  .btn-dropdown-check{
     width:100%; padding:7px 10px; border:1px solid var(--borda); border-radius:6px;
     font-size:13px; font-family:inherit; background:#fff; text-align:left; cursor:pointer;
     display:flex; align-items:center; justify-content:space-between; gap:6px;
   }
-  .btn-dropdown-mes .seta{color:var(--cinza); font-size:11px;}
-  .popover-mes{
+  .btn-dropdown-check .seta{color:var(--cinza); font-size:11px;}
+  .popover-check{
     display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:2100;
     background:#fff; border:1px solid var(--borda); border-radius:8px;
     box-shadow:0 8px 20px rgba(0,0,0,.16); padding:6px 10px; max-height:220px; overflow-y:auto;
   }
-  .popover-mes.aberto{display:block;}
-  .popover-mes label{display:flex; align-items:center; gap:7px; font-size:12.5px; color:#334155; padding:4px 0; cursor:pointer;}
-  .popover-mes input[type=checkbox]{cursor:pointer;}
-  .popover-mes .vazio{font-size:12px; color:var(--cinza); font-style:italic; padding:4px 0;}
+  .popover-check.aberto{display:block;}
+  .popover-check label{display:flex; align-items:center; gap:7px; font-size:12.5px; color:#334155; padding:4px 0; cursor:pointer;}
+  .popover-check input[type=checkbox]{cursor:pointer;}
+  .popover-check .vazio{font-size:12px; color:var(--cinza); font-style:italic; padding:4px 0;}
 
   .dica{font-size:11px; color:var(--cinza); margin-top:14px; line-height:1.5;}
   .vazio{font-size:12px; color:var(--cinza); font-style:italic; padding:10px 2px;}
@@ -338,15 +338,18 @@
         </select>
 
         <label class="rotulo">Região</label>
-        <select id="os-sel-regiao"><option value="">Todas</option></select>
+        <div class="dropdown-check">
+          <button type="button" id="os-btn-regiao" class="btn-dropdown-check">Todas <span class="seta">▾</span></button>
+          <div id="os-popover-regiao" class="popover-check"></div>
+        </div>
 
         <label class="rotulo">Contrato</label>
         <select id="os-sel-contrato"><option value="">Todos</option></select>
 
         <label class="rotulo">Mês (emissão + cronograma)</label>
-        <div class="dropdown-mes">
-          <button type="button" id="os-btn-mes" class="btn-dropdown-mes">Todos os meses <span class="seta">▾</span></button>
-          <div id="os-popover-mes" class="popover-mes"></div>
+        <div class="dropdown-check">
+          <button type="button" id="os-btn-mes" class="btn-dropdown-check">Todos os meses <span class="seta">▾</span></button>
+          <div id="os-popover-mes" class="popover-check"></div>
         </div>
       </div>
 
@@ -617,6 +620,11 @@ function entradasUnicasOS(feats){
 }
 
 var filtrosOsMontados = false;
+// Região usa o código REAL da planilha (regiao_os: "R01".."R13" = manutenção,
+// "R14".."R24" = restauração — mesmo trecho físico, contrato diferente), não
+// o código geográfico agrupado. Multi-seleção (Set), mesmo motivo das outras:
+// a usuária quer ver "Região 11 + Região 12" juntas. Vazio = "Todas".
+var regioesAtivasOS = new Set();
 // Multi-seleção — pode escolher "Concluída" + "Em andamento" ao mesmo tempo,
 // por exemplo. Vazio = "Todas" (nenhum filtro de situação).
 var situacoesAtivasOS = new Set();
@@ -670,13 +678,12 @@ function ordenarMesesEmissao(meses){
 // só mostra opção que bate com o resto do filtro ativo), na ordem do calendário.
 function popularSelectMes(){
   var tipo = document.getElementById('os-sel-tipo').value;
-  var regiaoOs = document.getElementById('os-sel-regiao').value;
   var contrato = document.getElementById('os-sel-contrato').value;
   var meses = {};
   todasFeaturesOS().forEach(function(f){
     var p = f.properties;
     if(tipo && p.tipo_servico !== tipo) return;
-    if(regiaoOs && p.regiao_os !== regiaoOs) return;
+    if(regioesAtivasOS.size && !regioesAtivasOS.has(p.regiao_os)) return;
     if(contrato && p.contrato !== contrato) return;
     if(situacoesAtivasOS.size && !situacoesAtivasOS.has(p.situacao)) return;
     mesesDaEntrada(p).forEach(function(m){ meses[m] = true; });
@@ -696,6 +703,23 @@ function popularSelectMes(){
   atualizarBotaoMes();
 }
 
+// Liga um botão de dropdown ao seu popover de checkboxes: clicar no botão
+// abre/fecha, clicar em qualquer lugar fora do popover fecha. Usado por
+// Região e Mês (os dois dropdowns de múltipla escolha dessa tela).
+function configurarDropdownCheck(idBotao, idPopover){
+  var btn = document.getElementById(idBotao);
+  var pop = document.getElementById(idPopover);
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    pop.classList.toggle('aberto');
+  });
+  document.addEventListener('click', function(e){
+    if(pop.classList.contains('aberto') && !pop.contains(e.target) && e.target !== btn){
+      pop.classList.remove('aberto');
+    }
+  });
+}
+
 // Texto do botão reflete a seleção: "Todos os meses", 1 mês por extenso, ou
 // "N meses selecionados" (uma lista longa não caberia legível no botão).
 function atualizarBotaoMes(){
@@ -712,18 +736,30 @@ function atualizarBotaoMes(){
 // mostrando só as regiões daquele tipo que têm O.S.P. na planilha.
 function popularSelectRegiao(){
   var tipo = document.getElementById('os-sel-tipo').value;
-  var valorAtual = document.getElementById('os-sel-regiao').value;
   var regioesOs = {};
   todasFeaturesOS().forEach(function(f){
     if(tipo && f.properties.tipo_servico !== tipo) return;
     regioesOs[f.properties.regiao_os] = true;
   });
-  var sel = document.getElementById('os-sel-regiao');
-  sel.innerHTML = '<option value="">Todas</option>' + Object.keys(regioesOs).sort().map(function(r){
-    return '<option value="'+r+'">'+rotuloRegiao(r)+'</option>';
-  }).join('');
-  // mantém a região escolhida se ela ainda existir pro tipo novo, senão volta a "Todas"
-  sel.value = Array.from(sel.options).some(function(o){ return o.value === valorAtual; }) ? valorAtual : '';
+  var chaves = Object.keys(regioesOs).sort();
+  // mantém as regiões escolhidas que ainda existem pro tipo novo
+  regioesAtivasOS = new Set(Array.from(regioesAtivasOS).filter(function(r){ return chaves.indexOf(r) !== -1; }));
+  var popover = document.getElementById('os-popover-regiao');
+  popover.innerHTML = chaves.length ? chaves.map(function(r){
+    var marcado = regioesAtivasOS.has(r) ? ' checked' : '';
+    return '<label><input type="checkbox" value="'+r+'"'+marcado+'> '+rotuloRegiao(r)+'</label>';
+  }).join('') : '<div class="vazio">Nenhuma região nessa combinação de filtros.</div>';
+  atualizarBotaoRegiao();
+}
+
+// Texto do botão reflete a seleção: "Todas", 1 região por extenso, ou "N
+// regiões selecionadas".
+function atualizarBotaoRegiao(){
+  var btn = document.getElementById('os-btn-regiao');
+  var texto = regioesAtivasOS.size === 0 ? 'Todas'
+    : regioesAtivasOS.size === 1 ? rotuloRegiao(Array.from(regioesAtivasOS)[0])
+    : regioesAtivasOS.size + ' regiões selecionadas';
+  btn.childNodes[0].nodeValue = texto + ' ';
 }
 
 // Contrato também depende de Tipo/Região — um contrato de manutenção não
@@ -731,13 +767,12 @@ function popularSelectRegiao(){
 // do popularSelectRegiao). Repovoa toda vez que Tipo OU Região mudam.
 function popularSelectContrato(){
   var tipo = document.getElementById('os-sel-tipo').value;
-  var regiaoOs = document.getElementById('os-sel-regiao').value;
   var valorAtual = document.getElementById('os-sel-contrato').value;
   var contratos = {};
   todasFeaturesOS().forEach(function(f){
     var p = f.properties;
     if(tipo && p.tipo_servico !== tipo) return;
-    if(regiaoOs && p.regiao_os !== regiaoOs) return;
+    if(regioesAtivasOS.size && !regioesAtivasOS.has(p.regiao_os)) return;
     contratos[p.contrato] = true;
   });
   var sel = document.getElementById('os-sel-contrato');
@@ -764,33 +799,29 @@ function montarFiltrosOS(){
     popularSelectMes();
     renderizarListaOS();
   });
-  document.getElementById('os-sel-regiao').addEventListener('change', function(){
+  // Dropdowns de Região e Mês — botão abre/fecha o popover, clique fora fecha
+  // (mesmo padrão pra qualquer dropdown de múltipla escolha dessa tela).
+  configurarDropdownCheck('os-btn-regiao', 'os-popover-regiao');
+  configurarDropdownCheck('os-btn-mes', 'os-popover-mes');
+  // Delegado no container (as checkboxes são recriadas a cada popularSelectX()).
+  document.getElementById('os-popover-regiao').addEventListener('change', function(e){
+    if(e.target.type !== 'checkbox') return;
+    if(e.target.checked) regioesAtivasOS.add(e.target.value);
+    else regioesAtivasOS.delete(e.target.value);
+    atualizarBotaoRegiao();
     popularSelectContrato();
     popularSelectMes();
     renderizarListaOS();
   });
-  document.getElementById('os-sel-contrato').addEventListener('change', function(){
-    popularSelectMes();
-    renderizarListaOS();
-  });
-  // Botão abre/fecha o popover; um clique em qualquer lugar fora dele fecha
-  // (mesmo padrão de dropdown fechado por padrão que a usuária pediu).
-  document.getElementById('os-btn-mes').addEventListener('click', function(e){
-    e.stopPropagation();
-    document.getElementById('os-popover-mes').classList.toggle('aberto');
-  });
-  document.addEventListener('click', function(e){
-    var pop = document.getElementById('os-popover-mes');
-    if(pop.classList.contains('aberto') && !pop.contains(e.target) && e.target.id !== 'os-btn-mes'){
-      pop.classList.remove('aberto');
-    }
-  });
-  // Delegado no container (as checkboxes são recriadas a cada popularSelectMes()).
   document.getElementById('os-popover-mes').addEventListener('change', function(e){
     if(e.target.type !== 'checkbox') return;
     if(e.target.checked) mesesAtivosOS.add(e.target.value);
     else mesesAtivosOS.delete(e.target.value);
     atualizarBotaoMes();
+    renderizarListaOS();
+  });
+  document.getElementById('os-sel-contrato').addEventListener('change', function(){
+    popularSelectMes();
     renderizarListaOS();
   });
   document.getElementById('os-busca-osp').addEventListener('input', function(){
@@ -882,12 +913,11 @@ function atualizarVisualKpiClicaveis(){
 
 function entradasFiltradasOS(){
   var tipo = document.getElementById('os-sel-tipo').value;
-  var regiaoOs = document.getElementById('os-sel-regiao').value; // "" ou "R14" (código real da planilha)
   var contrato = document.getElementById('os-sel-contrato').value;
   var feats = todasFeaturesOS().filter(function(f){
     var p = f.properties;
     if(tipo && p.tipo_servico !== tipo) return false;
-    if(regiaoOs && p.regiao_os !== regiaoOs) return false;
+    if(regioesAtivasOS.size && !regioesAtivasOS.has(p.regiao_os)) return false;
     if(contrato && p.contrato !== contrato) return false;
     if(situacoesAtivasOS.size && !situacoesAtivasOS.has(p.situacao)) return false;
     if(mesesAtivosOS.size && !mesesDaEntrada(p).some(function(m){ return mesesAtivosOS.has(m); })) return false;
@@ -906,8 +936,7 @@ function atualizarResumoFiltros(){
   if(situacoesAtivasOS.size) partes.push(Array.from(situacoesAtivasOS).map(rotuloSituacao).join(' + '));
   var tipo = document.getElementById('os-sel-tipo').value;
   if(tipo) partes.push(tipo === 'restauracao' ? 'Restauração' : 'Manutenção');
-  var regiaoEl = document.getElementById('os-sel-regiao');
-  if(regiaoEl.value) partes.push(regiaoEl.options[regiaoEl.selectedIndex].textContent);
+  if(regioesAtivasOS.size) partes.push(Array.from(regioesAtivasOS).sort().map(rotuloRegiao).join(' + '));
   var contrato = document.getElementById('os-sel-contrato').value;
   if(contrato) partes.push(rotuloContrato(contrato));
   if(mesesAtivosOS.size) partes.push(ordenarMesesEmissao(Array.from(mesesAtivosOS)).join(' + '));
@@ -972,8 +1001,7 @@ function destruirGrafico(nome){
 function descricaoFiltrosOS(){
   var tipo = document.getElementById('os-sel-tipo').value;
   var tipoTxt = tipo === 'restauracao' ? 'Restauração' : (tipo === 'manutencao' ? 'Manutenção' : 'Manutenção + Restauração');
-  var regiaoEl = document.getElementById('os-sel-regiao');
-  var regiaoTxt = regiaoEl.value ? regiaoEl.options[regiaoEl.selectedIndex].textContent : 'todas as regiões';
+  var regiaoTxt = regioesAtivasOS.size ? Array.from(regioesAtivasOS).sort().map(rotuloRegiao).join(' + ') : 'todas as regiões';
   var contratoVal = document.getElementById('os-sel-contrato').value;
   var contrato = contratoVal ? rotuloContrato(contratoVal) : 'todos os contratos';
   var situacaoTxt = situacoesAtivasOS.size ? Array.from(situacoesAtivasOS).map(rotuloSituacao).join(' + ') : 'todas as situações';
