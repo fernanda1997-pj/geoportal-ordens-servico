@@ -206,7 +206,7 @@
   #dashboard-overlay .dash-acoes button:hover{background:rgba(255,255,255,.26);}
   #dashboard-overlay .dash-corpo{flex:1; overflow:auto; padding:18px 22px 26px;}
 
-  .dash-kpis{display:grid; grid-template-columns:repeat(7, 1fr); gap:12px; margin-bottom:18px;}
+  .dash-kpis{display:grid; grid-template-columns:repeat(8, 1fr); gap:12px; margin-bottom:18px;}
   .dash-kpis.com-mes{grid-template-columns:repeat(4, 1fr);}
   .dash-kpi{
     background:#fff; border:1px solid var(--borda); border-radius:10px; padding:12px 10px;
@@ -323,6 +323,7 @@
         <div class="kpi-mini kpi-clicavel" data-filtro-situacao="todas" title="Ver todas as O.S.P. emitidas"><b id="os-total">—</b><span>emitidas</span></div>
         <div class="kpi-mini kpi-clicavel" data-filtro-situacao="concluidas" title="Filtrar só as concluídas"><b id="os-concluidas">—</b><span>concluídas</span></div>
         <div class="kpi-mini kpi-clicavel" data-filtro-situacao="pendentes" title="Filtrar as ainda não concluídas"><b id="os-pendentes">—</b><span>pendentes</span></div>
+        <div class="kpi-mini kpi-clicavel" data-filtro-atrasada="1" title="Filtrar só as atrasadas (passou do prazo)"><b id="os-atrasadas">—</b><span>atrasadas</span></div>
         <div class="kpi-mini"><b id="os-valor">—</b><span>previsto</span></div>
       </div>
 
@@ -422,6 +423,7 @@
         <div class="dash-kpi kpi-clicavel" data-filtro-situacao="todas" title="Ver todas as O.S.P. emitidas"><b id="dash-kpi-total">—</b><span>emitidas</span></div>
         <div class="dash-kpi kpi-clicavel" data-filtro-situacao="concluidas" title="Filtrar só as concluídas"><b id="dash-kpi-concluidas">—</b><span>concluídas</span></div>
         <div class="dash-kpi kpi-clicavel" data-filtro-situacao="pendentes" title="Filtrar as ainda não concluídas"><b id="dash-kpi-pendentes">—</b><span>pendentes</span></div>
+        <div class="dash-kpi kpi-clicavel" data-filtro-atrasada="1" title="Filtrar só as atrasadas (passou do prazo)"><b id="dash-kpi-atrasadas">—</b><span>atrasadas</span></div>
         <div class="dash-kpi"><b id="dash-kpi-previsto">—</b><span>valor previsto</span></div>
         <div class="dash-kpi"><b id="dash-kpi-executado">—</b><span>valor executado</span></div>
         <div class="dash-kpi"><b id="dash-kpi-pct">—</b><span>% executado</span></div>
@@ -647,6 +649,10 @@ var filtrosOsMontados = false;
 // o código geográfico agrupado. Multi-seleção (Set), mesmo motivo das outras:
 // a usuária quer ver "Região 11 + Região 12" juntas. Vazio = "Todas".
 var regioesAtivasOS = new Set();
+// true = mostra só O.S.P. com prazo estourado (props.atrasada, calculado no
+// converter_os.py: mês de emissão + PRAZO em meses, comparado contra o
+// último mês medido se já finalizada, ou contra hoje se ainda ativa).
+var filtroAtrasadas = false;
 // Multi-seleção — pode escolher "Concluída" + "Em andamento" ao mesmo tempo,
 // por exemplo. Vazio = "Todas" (nenhum filtro de situação).
 var situacoesAtivasOS = new Set();
@@ -878,10 +884,20 @@ function montarFiltrosOS(){
   // correspondente, em vez de ter que abrir "Filtros" e mexer nas pills.
   document.querySelectorAll('.kpi-clicavel').forEach(function(el){
     el.addEventListener('click', function(){
-      aplicarFiltroSituacaoRapido(el.getAttribute('data-filtro-situacao'), todas);
+      if(el.hasAttribute('data-filtro-atrasada')) alternarFiltroAtrasadas();
+      else aplicarFiltroSituacaoRapido(el.getAttribute('data-filtro-situacao'), todas);
     });
   });
   atualizarVisualKpiClicaveis();
+}
+
+// Clicar de novo desliga (é um toggle, não um "radio" como os de Situação —
+// atrasada corta através de várias situações ao mesmo tempo, não faz
+// sentido ela "excluir" emitidas/concluídas/pendentes).
+function alternarFiltroAtrasadas(){
+  filtroAtrasadas = !filtroAtrasadas;
+  atualizarVisualKpiClicaveis();
+  renderizarListaOS();
 }
 
 function atualizarVisualPillsSituacao(){
@@ -925,6 +941,10 @@ function atualizarVisualKpiClicaveis(){
   var setPendentes = Object.keys(situacoesTodas).sort().join('|');
   var setAtual = Array.from(situacoesAtivasOS).sort().join('|');
   document.querySelectorAll('.kpi-clicavel').forEach(function(el){
+    if(el.hasAttribute('data-filtro-atrasada')){
+      el.classList.toggle('ativo', filtroAtrasadas);
+      return;
+    }
     var tipo = el.getAttribute('data-filtro-situacao');
     var ativo = (tipo === 'todas' && situacoesAtivasOS.size === 0) ||
       (tipo === 'concluidas' && setAtual === 'Concluída') ||
@@ -943,6 +963,7 @@ function entradasFiltradasOS(){
     if(contrato && p.contrato !== contrato) return false;
     if(situacoesAtivasOS.size && !situacoesAtivasOS.has(p.situacao)) return false;
     if(mesesAtivosOS.size && !mesesDaEntrada(p).some(function(m){ return mesesAtivosOS.has(m); })) return false;
+    if(filtroAtrasadas && !p.atrasada) return false;
     if(!ospBate(p, buscaOspOS)) return false;
     return true;
   });
@@ -962,6 +983,7 @@ function atualizarResumoFiltros(){
   var contrato = document.getElementById('os-sel-contrato').value;
   if(contrato) partes.push(rotuloContrato(contrato));
   if(mesesAtivosOS.size) partes.push(ordenarMesesEmissao(Array.from(mesesAtivosOS)).join(' + '));
+  if(filtroAtrasadas) partes.push('⏰ atrasadas');
   if(buscaOspOS) partes.push('nº "'+buscaOspOS+'"');
   document.getElementById('filtros-resumo').textContent = partes.length ? partes.join(' · ') : 'todas as O.S.P.';
 }
@@ -979,6 +1001,7 @@ function renderizarListaOS(){
   document.getElementById('os-total').textContent = entradas.length;
   document.getElementById('os-concluidas').textContent = concluidas;
   document.getElementById('os-pendentes').textContent = entradas.length - concluidas;
+  document.getElementById('os-atrasadas').textContent = entradas.filter(function(e){ return e.props.atrasada; }).length;
   document.getElementById('os-valor').textContent = fmtReais(valor);
 
   document.getElementById('os-lista').innerHTML = entradas.map(function(e){
@@ -989,6 +1012,7 @@ function renderizarListaOS(){
         '<div class="sub">'+rotuloContrato(p.contrato)+' · '+(p.servico||'—')+'</div>'+
         '<div class="rodape">'+
           '<span class="badge-situacao" style="background:'+corSituacao(p.situacao)+'">'+rotuloComIcone(p.situacao)+'</span>'+
+          (p.atrasada ? '<span class="badge-situacao" style="background:#B91C1C" title="Prazo final era '+p.prazo_limite+'">⏰ Atrasada</span>' : '')+
           '<span class="valor">'+fmtReais(p.valor_previsto)+'</span>'+
         '</div>'+
         '<div class="tag-tipo">'+rotuloRegiao(p.regiao_os)+' · '+(p.tipo_servico === 'restauracao' ? 'Restauração' : 'Manutenção')+'</div>'+
@@ -1029,6 +1053,7 @@ function descricaoFiltrosOS(){
   var situacaoTxt = situacoesAtivasOS.size ? Array.from(situacoesAtivasOS).map(rotuloSituacao).join(' + ') : 'todas as situações';
   var base = tipoTxt + ' · ' + regiaoTxt + ' · ' + contrato + ' · ' + situacaoTxt;
   if(mesesAtivosOS.size) base += ' · ' + ordenarMesesEmissao(Array.from(mesesAtivosOS)).join(' + ');
+  if(filtroAtrasadas) base += ' · ⏰ atrasadas';
   if(buscaOspOS) base += ' · nº "' + buscaOspOS + '"';
   return base;
 }
@@ -1105,6 +1130,7 @@ function atualizarDashboard(){
   document.getElementById('dash-kpi-total').textContent = entradas.length;
   document.getElementById('dash-kpi-concluidas').textContent = concluidas;
   document.getElementById('dash-kpi-pendentes').textContent = entradas.length - concluidas;
+  document.getElementById('dash-kpi-atrasadas').textContent = entradas.filter(function(e){ return e.props.atrasada; }).length;
   document.getElementById('dash-kpi-previsto').textContent = fmtReais(totalPrevisto);
   document.getElementById('dash-kpi-executado').textContent = fmtReais(totalExecutado);
   document.getElementById('dash-kpi-pct').textContent = pct.toFixed(1).replace('.', ',')+'%';
@@ -1406,6 +1432,9 @@ function blocoOS(props, semGeometria){
       '<div class="linha"><span class="rot">Trecho</span><span class="val">'+(props.trecho_nome||'—')+'</span></div>'+
       '<div class="linha"><span class="rot">Serviço</span><span class="val">'+(props.servico||'—')+'</span></div>'+
       '<div class="linha"><span class="rot">Emissão</span><span class="val">'+(props.data_emissao||'—')+' · '+(props.cronograma||'—')+'</span></div>'+
+      (props.prazo_limite ? '<div class="linha"><span class="rot">Prazo</span><span class="val">'+
+        (props.atrasada ? '<b style="color:#B91C1C">⏰ Atrasada</b> (prazo era '+props.prazo_limite+')' : 'No prazo (até '+props.prazo_limite+')')+
+        '</span></div>' : '')+
       '<div class="linha"><span class="rot">Tipo</span><span class="val">'+(props.tipo_servico === 'restauracao' ? 'Restauração' : 'Manutenção')+' ('+props.regiao_os+')</span></div>'+
       '<div class="total"><span>Valor previsto</span><b>'+fmtReais(props.valor_previsto)+'</b></div>'+
       (props.observacao ? '<div style="margin-top:6px; font-size:11px; color:#78350F;">'+props.observacao+'</div>' : '')+

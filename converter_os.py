@@ -163,21 +163,59 @@ def _int_seguro(v):
 
 
 def _parse_mes_ano(valor):
-    """datetime real OU texto "ABRIL-2026"/"ABRIL/2026" (confirmado os dois
-    separadores, hífen na BD_OSP e barra na BD_MED) -> (mês completo bonito,
-    ano) ou (None, None) se não reconhecer."""
+    """datetime real OU texto "ABRIL-2026"/"ABRIL/2026"/"MAIO/26" (confirmado
+    os dois separadores — hífen na BD_OSP e barra na BD_MED — E os dois
+    tamanhos de ano, 4 dígitos ou só 2) -> (mês completo bonito, ano) ou
+    (None, None) se não reconhecer. **Cuidado, já foi bug real**: a 1ª versão
+    só aceitava ano de 4 dígitos e descartava silenciosamente qualquer O.S.P.
+    com data tipo "MARÇO/26" (ano com 2 dígitos) — conferir sempre contra
+    `relatorio_qualidade_os.txt`/contagem de `data_emissao` nulo se esse
+    parser for mexido de novo."""
     if isinstance(valor, datetime.datetime):
         return MESES_ORDEM[valor.month - 1], valor.year
     if isinstance(valor, str) and valor.strip():
-        m = re.match(r'^([A-ZÀ-Ü]+)[-/\s]+(\d{4})$', valor.strip().upper())
+        m = re.match(r'^([A-ZÀ-Ü]+)[-/\s]+(\d{2,4})$', valor.strip().upper())
         if m:
             nome = MESES_COMPLETO_MAP.get(m.group(1))
             if nome:
-                return nome, int(m.group(2))
+                ano = int(m.group(2))
+                if ano < 100:
+                    ano += 2000
+                return nome, ano
     return None, None
 
 
 MESES_ABREV_MINUSCULO = {nome: nome[:3].lower() for nome in MESES_ORDEM}
+
+# Estados finais — já não tem mais execução de campo acontecendo, então o
+# "atrasou?" olha pro ÚLTIMO mês medido (não pra hoje).
+SITUACOES_FINALIZADAS = {'Concluída', 'Cancelada', 'Justificada'}
+
+
+def calcular_prazo(mes_emissao, ano_emissao, prazo_meses, situacao, meses_cronograma):
+    """PRAZO (BD_OSP) é em MESES (sempre visto 1-4, nunca dias — confirmado
+    comparando a distribuição real: contrato de manutenção/restauração não
+    dá prazo de "2 dias" pra nada). Prazo final = mês de emissão + PRAZO
+    meses. O.S.P. já finalizada (Concluída/Cancelada/Justificada) compara
+    contra o ÚLTIMO mês com medição real; ainda em andamento compara contra
+    HOJE. Sem emissão ou sem prazo (campo vazio na fonte) -> não dá pra
+    calcular, retorna tudo None (não assume no prazo nem atrasada)."""
+    if not mes_emissao or not prazo_meses:
+        return None, None
+    idx_emissao = MESES_ORDEM.index(mes_emissao)
+    total = idx_emissao + int(prazo_meses)
+    ano_limite, idx_limite = ano_emissao + total // 12, total % 12
+    mes_limite_str = f'{MESES_ORDEM[idx_limite]}/{ano_limite}'
+
+    if situacao in SITUACOES_FINALIZADAS:
+        if not meses_cronograma:
+            return mes_limite_str, False  # finalizada sem nenhuma medição registrada — não dá pra provar atraso
+        ultimo_mes, ultimo_ano = meses_cronograma[-1].split('/')
+        referencia = (int(ultimo_ano), MESES_ORDEM.index(ultimo_mes))
+    else:
+        hoje = datetime.date.today()
+        referencia = (hoje.year, hoje.month - 1)
+    return mes_limite_str, referencia > (ano_limite, idx_limite)
 
 
 def _cronograma_legado(meses_cronograma):
@@ -457,6 +495,9 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
         valor_previsto = _float_br(ws.cell(row=r, column=cols['VALOR']).value) or 0
         valor_executado = _float_br(ws.cell(row=r, column=cols['MEDIDO']).value) or 0
 
+        prazo_meses = _int_seguro(ws.cell(row=r, column=cols['PRAZO']).value) if 'PRAZO' in cols else None
+        prazo_limite, atrasada = calcular_prazo(mes_nome, ano, prazo_meses, situacao, meses_cronograma)
+
         teve_med_justificada = cols.get('TEVE MED JUSTIFICADA')
         observacao = None
         if teve_med_justificada and _norm(ws.cell(row=r, column=teve_med_justificada).value) == 'SIM':
@@ -482,6 +523,9 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
             'pct_executado': (valor_executado / valor_previsto * 100) if valor_previsto > 0 else None,
             'situacao_final': situacao,
             'medido_mensal': medido_mensal,
+            'prazo_meses': prazo_meses,
+            'prazo_limite': prazo_limite,
+            'atrasada': atrasada,
         }
 
         alvo = (resultados_por_regiao.setdefault(regiao_geo_label, []))
