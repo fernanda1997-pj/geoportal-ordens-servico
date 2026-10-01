@@ -1240,11 +1240,27 @@ function renderGraficoRanking(entradas){
       scales:{
         x:{ ticks:{ callback: fmtReaisCompacto } },
         // Rótulo de serviço é longo mesmo quebrado em várias linhas — sem
-        // forçar uma largura mínima pro eixo Y, o Chart.js dá só o espaço
-        // que sobra do resto do gráfico (pouco numa tela estreita/card
-        // menor) e cada LINHA do rótulo quebrado sai cortada de novo.
+        // forçar a largura certa pro eixo Y, o Chart.js dá só o espaço que
+        // sobra do resto do gráfico (pouco numa tela estreita/card menor) e
+        // cada LINHA do rótulo quebrado sai cortada de novo. 1ª tentativa
+        // usou uma % da largura do gráfico (scale.chart.width * 0.45), mas
+        // isso ainda encolhe demais em tela estreita — mede o texto de
+        // verdade (ctx.measureText) e usa exatamente o que a maior linha
+        // precisa, sem depender da largura do card.
         y:{ ticks:{ autoSkip:false, font:{size:10} },
-          afterFit:function(scale){ scale.width = Math.min(260, scale.chart.width * 0.45); } },
+          afterFit:function(scale){
+            var ctx = scale.ctx;
+            ctx.save();
+            ctx.font = (scale.options.ticks.font.size || 10) + 'px sans-serif';
+            var maxW = 0;
+            scale.chart.data.labels.forEach(function(label){
+              (Array.isArray(label) ? label : [label]).forEach(function(linha){
+                maxW = Math.max(maxW, ctx.measureText(linha).width);
+              });
+            });
+            ctx.restore();
+            scale.width = Math.min(Math.max(maxW + 16, 80), 280);
+          } },
       },
       plugins:{ legend:{display:false},
         tooltip:{ callbacks:{ label:function(ctx){ return fmtReais(ctx.raw); } } } } },
