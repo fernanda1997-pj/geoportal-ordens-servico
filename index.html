@@ -324,7 +324,7 @@
         <div class="kpi-mini kpi-clicavel" data-filtro-situacao="concluidas" title="Filtrar só as concluídas"><b id="os-concluidas">—</b><span>concluídas</span></div>
         <div class="kpi-mini kpi-clicavel" data-filtro-situacao="pendentes" title="Filtrar as ainda não concluídas"><b id="os-pendentes">—</b><span>pendentes</span></div>
         <div class="kpi-mini kpi-clicavel" data-filtro-atrasada="1" title="Filtrar só as atrasadas (passou do prazo)"><b id="os-atrasadas">—</b><span>atrasadas</span></div>
-        <div class="kpi-mini"><b id="os-valor">—</b><span>previsto</span></div>
+        <div class="kpi-mini" style="grid-column:1 / -1;"><b id="os-valor">—</b><span>previsto</span></div>
       </div>
 
       <button class="btn-filtros" id="btn-filtros" type="button">
@@ -334,7 +334,10 @@
       </button>
       <div class="filtros-corpo" id="filtros-corpo">
         <label class="rotulo">Situação</label>
-        <div id="os-pills" class="pills-situacao"></div>
+        <div class="dropdown-check">
+          <button type="button" id="os-btn-situacao" class="btn-dropdown-check">Todas <span class="seta">▾</span></button>
+          <div id="os-popover-situacao" class="popover-check"></div>
+        </div>
 
         <label class="rotulo" style="margin-top:10px;">Tipo de serviço</label>
         <select id="os-sel-tipo">
@@ -857,25 +860,29 @@ function montarFiltrosOS(){
     renderizarListaOS();
   });
 
-  var pillsHtml = '<button class="pill-situacao ativa" data-situacao="" style="background:var(--azul)">Todas <span class="n">'+todas.length+'</span></button>';
-  Object.keys(situacoes).sort().forEach(function(s){
-    pillsHtml += '<button class="pill-situacao" data-situacao="'+s+'" style="--cor:'+corSituacao(s)+'">'+rotuloComIcone(s)+'</button>';
+  // Situação: mesmo dropdown fechado + checkboxes de Região/Mês (eram 9
+  // pills sempre visíveis — ficou poluído com as situações novas do banco).
+  // Contagem por O.S.P. única (entradasUnicasOS), não por feature: a pill
+  // "Todas" antiga mostrava 1548 (cada S.R.E. do trecho contava), destoando
+  // dos 332 "emitidas" logo acima.
+  var nPorSituacao = {};
+  entradasUnicasOS(todas).forEach(function(e){
+    nPorSituacao[e.props.situacao] = (nPorSituacao[e.props.situacao] || 0) + 1;
   });
-  document.getElementById('os-pills').innerHTML = pillsHtml;
-  document.querySelectorAll('#os-pills .pill-situacao').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var s = btn.getAttribute('data-situacao');
-      if(s === ''){
-        situacoesAtivasOS.clear(); // "Todas" limpa a seleção
-      }else{
-        if(situacoesAtivasOS.has(s)) situacoesAtivasOS.delete(s);
-        else situacoesAtivasOS.add(s);
-      }
-      atualizarVisualPillsSituacao();
-      atualizarVisualKpiClicaveis();
-      popularSelectMes();
-      renderizarListaOS();
-    });
+  document.getElementById('os-popover-situacao').innerHTML = Object.keys(situacoes).sort().map(function(s){
+    return '<label><input type="checkbox" value="'+s+'"> '+
+      '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+corSituacao(s)+';flex:none;"></span> '+
+      rotuloComIcone(s)+' <span style="margin-left:auto;color:var(--cinza);font-size:11px;">'+(nPorSituacao[s]||0)+'</span></label>';
+  }).join('');
+  configurarDropdownCheck('os-btn-situacao', 'os-popover-situacao');
+  document.getElementById('os-popover-situacao').addEventListener('change', function(e){
+    if(e.target.type !== 'checkbox') return;
+    if(e.target.checked) situacoesAtivasOS.add(e.target.value);
+    else situacoesAtivasOS.delete(e.target.value);
+    atualizarVisualPillsSituacao();
+    atualizarVisualKpiClicaveis();
+    popularSelectMes();
+    renderizarListaOS();
   });
   atualizarVisualPillsSituacao();
 
@@ -900,14 +907,18 @@ function alternarFiltroAtrasadas(){
   renderizarListaOS();
 }
 
+// Sincroniza os checkboxes do dropdown de Situação com situacoesAtivasOS
+// (que também muda pelos atalhos de KPI emitidas/concluídas/pendentes) e
+// atualiza o texto do botão: "Todas" / 1 situação / "N situações".
 function atualizarVisualPillsSituacao(){
-  document.querySelectorAll('#os-pills .pill-situacao').forEach(function(b){
-    var s = b.getAttribute('data-situacao');
-    var ativa = s === '' ? situacoesAtivasOS.size === 0 : situacoesAtivasOS.has(s);
-    b.classList.toggle('ativa', ativa);
-    b.style.background = ativa ? (s ? corSituacao(s) : 'var(--azul)') : '#fff';
-    b.style.color = ativa ? '#fff' : '#334155';
+  document.querySelectorAll('#os-popover-situacao input[type=checkbox]').forEach(function(chk){
+    chk.checked = situacoesAtivasOS.has(chk.value);
   });
+  var btn = document.getElementById('os-btn-situacao');
+  var texto = situacoesAtivasOS.size === 0 ? 'Todas'
+    : situacoesAtivasOS.size === 1 ? rotuloComIcone(Array.from(situacoesAtivasOS)[0])
+    : situacoesAtivasOS.size + ' situações selecionadas';
+  btn.childNodes[0].nodeValue = texto + ' ';
 }
 
 // "todas" (emitidas) limpa o filtro de Situação; "concluidas" isola só
