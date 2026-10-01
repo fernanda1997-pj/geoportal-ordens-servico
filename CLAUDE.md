@@ -25,7 +25,7 @@ totalmente independente.
 | `dados/os_<REGIAO>.js` | Um GeoJSON (`window.DADOS_OS_REGIAO[regiao]`) por região **geográfica** (R1, R2, R3...) — não por competência, a O.S. não é mensal |
 | `dados/manifest_os.js` | Lista de regiões disponíveis (`window.MANIFEST_OS`) |
 | `relatorio_qualidade_os.txt` | Gerado a cada rodada (gitignored) — trecho não encontrado no shapefile, erro de fórmula (`#REF!`) na planilha etc. |
-| `camadas/` | Cópia de `R<n>_TRECHOS.shp` — só as regiões usadas aqui (R1/R2/R3 = Lote 1 ativo; R11/R12/R13 = Lote 4, shapefiles já prontos aguardando a planilha) |
+| `camadas/` | Cópia de `R<n>_TRECHOS.shp` — só as regiões usadas aqui (R1/R2/R3 = Lote 1, R11/R12/R13 = Lote 4, ambos ativos) |
 | `logo/` | Logos RTA + MSI |
 
 ## Região de manutenção × restauração — mesma área física, contrato diferente
@@ -65,8 +65,16 @@ ordem e esse comportamento, depois de eu tentar um seletor único combinado
 pros códigos daquele tipo (`popularSelectRegiao()`); escolher a Região filtra as
 opções de Contrato (`popularSelectContrato()`). Ambos preservam a seleção atual se
 ainda for válida pro novo filtro, senão voltam a "Todas"/"Todos". Só aparecem
-combinações que existem de verdade nos dados (ex. hoje falta "Região 15" em
-Restauração — não tem O.S.P. emitida ali ainda).
+combinações que existem de verdade nos dados.
+
+**Região e Mês são multi-seleção** (`regioesAtivasOS`/`mesesAtivosOS`, Sets —
+mesmo padrão de `situacoesAtivasOS`): dropdown fechado por padrão, abre um
+popover de checkboxes ao clicar o botão (`.dropdown-check`/`.popover-check`/
+`configurarDropdownCheck()`, compartilhado pelos dois). Mês considera tanto
+`data_emissao` quanto `meses_cronograma` (`mesesDaEntrada()`) — uma O.S.P.
+emitida em Agosto com CRONOGRAMA "ago/set" aparece nos dois meses sem
+precisar marcar os dois. Tipo e Contrato continuam seleção única (`<select>`
+normal) — só virou multi-seleção o que a usuária pediu explicitamente.
 
 ## Situação da O.S.P.
 
@@ -172,11 +180,13 @@ config `ordens-servico`, porta 8771).
 
 ## Lote 4 (Regiões 11/12/13 manutenção + 22/23/24 restauração)
 
-Shapefiles (`camadas/R11/R12/R13_TRECHOS.shp`) e mapeamento
-(`MAPA_REGIAO_GEOGRAFICA`) já prontos — testado com planilha fictícia isolada,
-funciona sem mudar nada de código. **Só falta a planilha real** ("Controle de OSPs
-LOTE 04.xlsm" ou nome equivalente) em `fichas/OS/` — quando a usuária colocar,
-rodar `python converter_os.py` de novo.
+**Lançado em 2026-10-01** — "Controle de OSPs LOTE 04.xlsx" colocada pela
+usuária em `fichas/OS/` (convive com a planilha do Lote 01 sem conflito,
+regiões diferentes, sem sobreposição). Shapefiles e `MAPA_REGIAO_GEOGRAFICA`
+já estavam prontos desde o início do projeto. Total foi de 186 para 385 O.S.P.
+Contratos novos (049.2024, 009.2025, 051.2024, 042.2025, 043.2025, 041.2025)
+ainda sem empresa mapeada em `EMPRESA_POR_CONTRATO` (ver seção "Nome da
+empresa junto ao contrato" acima) — completar se a usuária pedir.
 
 ## Relação com outros projetos
 
