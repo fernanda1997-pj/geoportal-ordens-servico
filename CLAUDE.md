@@ -76,6 +76,39 @@ emitida em Agosto com CRONOGRAMA "ago/set" aparece nos dois meses sem
 precisar marcar os dois. Tipo e Contrato continuam seleção única (`<select>`
 normal) — só virou multi-seleção o que a usuária pediu explicitamente.
 
+## Ano de emissão — a planilha NÃO guarda ano em lugar nenhum
+
+A coluna "DATA EMISSÃO" só tem o mês por extenso ("Janeiro", sem ano), e
+"CRONOGRAMA" só tem abreviações de mês ("ago/set"), também sem ano. **Já
+tentamos inferir o ano pelo sufixo ".AAAA" do número do contrato** (ex.
+"051.2024" → 2024) — parecia razoável (contrato "dura ~1 ano"), mas a
+usuária confirmou em 2026-10 que é **FALSO**: o sufixo é só um número de
+identificação do contrato, não o ano real de emissão (contratos de
+manutenção/restauração têm vigência mais longa que 1 ano, continuam
+emitindo O.S.P. anos depois de assinados). Confirmação dela, literal:
+"as os da planilha são tudo de 2026, por mais que os contratos não seja" /
+"todas as regiões é 2026".
+
+`converter_os.py` usa hoje `ANO_EMISSAO_ATUAL` (constante, hoje = 2026)
+aplicada a TODA O.S.P., não importa região/lote/contrato — é a única fonte
+de ano disponível até a planilha ganhar uma coluna de verdade pra isso (ou a
+usuária avisar que mudou). **Se "ano de emissão" parecer estranho de novo,
+suspeitar primeiro de cache do navegador** (ver próxima seção) antes de
+mexer nessa lógica — ela é propositalmente simples agora (um valor fixo
+pra tudo), não tem mais regra por contrato pra quebrar.
+
+## Cache dos dados (`dados/os_*.js`)
+
+Carregados via `<script>` criado em JS (`carregarTodosOsRegiao()`), com
+`?v=Date.now()` no `src` — **sempre** força buscar a versão mais nova do
+servidor. Sem isso, dados atualizados (planilha nova, correção de ano etc.)
+podem ficar presos no cache do navegador sem a usuária perceber, já que o
+nome do arquivo não muda quando o conteúdo muda (foi exatamente o que
+aconteceu testando a correção do ano acima — `fetch({cache:'no-store'})`
+mostrava o valor certo enquanto a página carregada mostrava o errado).
+Qualquer novo arquivo de dados carregado dinamicamente neste projeto deve
+seguir o mesmo padrão.
+
 ## Situação da O.S.P.
 
 Vocabulário vem da aba "Tabelas Auxiliares" da planilha: `Em elaboração`,
