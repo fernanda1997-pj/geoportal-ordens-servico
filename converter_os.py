@@ -46,15 +46,16 @@ EPSG_METRICO = 31982  # SIRGAS 2000 / UTM 22S — mesmo do geoportal principal
 MAPA_REGIAO_GEOGRAFICA = {14: 1, 15: 2, 16: 3, 22: 11, 23: 12, 24: 13}
 REGIOES_RESTAURACAO = set(MAPA_REGIAO_GEOGRAFICA.keys())
 
-# O ano de emissão normalmente vem do sufixo ".AAAA" do número do contrato
-# (ver cálculo de `data_emissao` abaixo) — mas isso assume que o contrato só
-# emite O.S.P. dentro do próprio ano dele, o que NÃO vale pro Lote 04: a
-# usuária confirmou que toda emissão das 6 regiões do Lote 04 é de 2026, não
-# importa o que o número do contrato sugira (ex. 049.2024 e 051.2024 emitem
-# em 2026, não em 2024; 009.2025/042.2025/043.2025/041.2025 também são 2026,
-# não 2025). Contrato tem vigência mais longa que 1 ano nesse lote.
-REGIOES_LOTE_04 = {11, 12, 13, 22, 23, 24}
-ANO_EMISSAO_LOTE_04 = 2026
+# A planilha só guarda o MÊS na "DATA EMISSÃO" ("Janeiro", sem ano) — nenhuma
+# coluna tem o ano real. A 1ª tentativa foi inferir o ano pelo sufixo ".AAAA"
+# do número do contrato (assumindo que o contrato só emite O.S.P. dentro do
+# próprio ano dele), mas a usuária confirmou que isso é FALSO: TODAS as
+# regiões (Lote 01 e Lote 04) têm emissão real em ANO_EMISSAO_ATUAL, não
+# importa o sufixo do contrato — contratos de manutenção/restauração
+# continuam emitindo O.S.P. anos depois de assinados (vigência mais longa
+# que 1 ano). Sem outra fonte de ano na planilha, usa esse valor fixo pra
+# tudo — se isso mudar nalgum lote futuro, rever aqui.
+ANO_EMISSAO_ATUAL = 2026
 
 MESES_PT = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
             7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
@@ -74,9 +75,9 @@ def parse_meses_cronograma(cronograma_raw, ano_base):
     emissão (não é sub/superconjunto de DATA EMISSÃO, é informação adicional:
     uma O.S.P. emitida em Agosto com cronograma "ago/set" deve aparecer tanto
     no filtro de Agosto quanto no de Setembro). Sem ano na planilha — usa o
-    mesmo ano_base de DATA EMISSÃO (do sufixo .AAAA do contrato) e só avança
-    o ano se um token "voltar" no calendário em relação ao anterior (virada
-    de ano-civil no meio do cronograma; não visto nos dados até agora, mas a
+    mesmo ano_base de DATA EMISSÃO (ANO_EMISSAO_ATUAL) e só avança o ano se
+    um token "voltar" no calendário em relação ao anterior (virada de
+    ano-civil no meio do cronograma; não visto nos dados até agora, mas a
     regra fica correta se acontecer)."""
     if not cronograma_raw or not isinstance(cronograma_raw, str) or ano_base is None:
         return []
@@ -293,29 +294,16 @@ def parse_planilha_os(caminho):
                     n_sem_geometria += 1
 
             contrato = valor(r, 'CONTRATO')
-            # A planilha só guarda o MÊS na "DATA EMISSÃO" ("Janeiro", sem ano) —
-            # e o mesmo mês se repete em contratos de anos diferentes (ex.: R03
-            # tem "Julho" tanto no contrato 002.2025 quanto no 1452.2026). O
-            # número do contrato normalmente termina em ".AAAA" — usa isso como
-            # ano de emissão (regra que assume que o contrato dura ~1 ano, então
-            # o mês só pode ser daquele ano). Vira "Julho/2025" em vez de só
-            # "Julho", pra não misturar anos.
-            #
-            # EXCEÇÃO: Lote 04 (ver REGIOES_LOTE_04) — contratos de vigência mais
-            # longa, confirmados pela usuária como emitindo tudo em
-            # ANO_EMISSAO_LOTE_04 independente do sufixo do número do contrato.
+            # A planilha só guarda o MÊS na "DATA EMISSÃO" ("Janeiro", sem ano).
+            # Ano vem de ANO_EMISSAO_ATUAL (ver comentário na constante acima) —
+            # NÃO do número do contrato, que não reflete o ano real de emissão.
             mes_emissao = valor(r, 'DATA EMISSAO')
-            if regiao_num_planilha in REGIOES_LOTE_04:
-                ano_base = ANO_EMISSAO_LOTE_04
-            else:
-                m_ano = re.search(r'(\d{4})\s*$', str(contrato or ''))
-                ano_base = int(m_ano.group(1)) if m_ano else None
-            if mes_emissao and mes_emissao != '-' and ano_base:
-                data_emissao = f'{mes_emissao}/{ano_base}'
+            if mes_emissao and mes_emissao != '-':
+                data_emissao = f'{mes_emissao}/{ANO_EMISSAO_ATUAL}'
             else:
                 data_emissao = mes_emissao
             cronograma_raw = valor(r, 'CRONOGRAMA')
-            meses_cronograma = parse_meses_cronograma(cronograma_raw, ano_base)
+            meses_cronograma = parse_meses_cronograma(cronograma_raw, ANO_EMISSAO_ATUAL)
 
             props = {
                 'regiao': regiao_geo_label,

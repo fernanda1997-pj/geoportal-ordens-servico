@@ -591,7 +591,11 @@ function carregarTodosOsRegiao(callback){
   var restantes = pendentes.length;
   pendentes.forEach(function(regiao){
     var s = document.createElement('script');
-    s.src = 'dados/os_' + regiao + '.js';
+    // ?v=Date.now() força o navegador a sempre buscar a versão mais nova do
+    // servidor — sem isso, dados atualizados (planilha nova, correção de
+    // ano etc.) podiam ficar presos no cache do navegador sem a usuária
+    // perceber, já que o nome do arquivo não muda quando o conteúdo muda.
+    s.src = 'dados/os_' + regiao + '.js?v=' + Date.now();
     s.onload = function(){ arquivosOsCarregados[regiao] = true; if(--restantes === 0) callback(); };
     document.body.appendChild(s);
   });
