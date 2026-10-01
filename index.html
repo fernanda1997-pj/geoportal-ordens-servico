@@ -5,12 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Geoportal RTA-MSI — Ordens de Serviço</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- crossorigin: o html-to-image (Exportar imagem) precisa ler as regras
+     dessa folha pra embutir a fonte no PNG; sem CORS ela fica ilegível. -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
 <style>
   :root{
     --azul:#1E3A72; --azul-claro:#2d4f92; --cinza:#64748B; --fundo:#F1F5F9; --borda:#E2E8F0;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
-  html,body{height:100%; font-family:'Segoe UI',system-ui,sans-serif;}
+  /* Poppins = mesma fonte do portal de entrada (portal-rta-msi) e do de Contratos. */
+  html,body{height:100%; font-family:'Poppins','Segoe UI',system-ui,sans-serif;}
   #app{display:flex; height:100%; position:relative;}
 
   /* ---------- Painel lateral ---------- */
@@ -295,7 +301,7 @@
 <div id="gp-loading" style="position:fixed;inset:0;z-index:100000;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:15px;background:#0f1f3d;color:#fff;
-  font-family:'Segoe UI',system-ui,sans-serif;transition:opacity .5s ease;">
+  font-family:'Poppins','Segoe UI',system-ui,sans-serif;transition:opacity .5s ease;">
   <div style="width:36px;height:36px;border:3px solid rgba(255,255,255,0.22);
     border-top-color:#fff;border-radius:50%;animation:gp-rot .8s linear infinite;"></div>
   <div style="font-weight:700;font-size:20px;letter-spacing:0.14em;">RTA &middot; MSI</div>
@@ -474,6 +480,8 @@
 <script>
 (function(){
 'use strict';
+
+Chart.defaults.font.family = "'Poppins','Segoe UI',system-ui,sans-serif";
 
 // Situação da O.S.P. — vocabulário vem da aba "Tabelas Auxiliares" da
 // planilha de controle.
@@ -1077,7 +1085,12 @@ function descricaoFiltrosOS(){
 // caracteres; curtos (ex. "Trecho 123", "040.2024.0009") ficam como estão.
 function quebrarRotuloGrafico(label){
   if(typeof label !== 'string' || label.length <= 28) return label;
-  return label.split(' / ');
+  // "(+N itens)" vai pra linha própria — grudado no fim do último serviço,
+  // era sempre a linha mais larga e estourava o eixo com a Poppins.
+  var m = label.match(/^(.*?)\s*(\(\+\d+ itens\))$/);
+  var linhas = (m ? m[1] : label).split(' / ');
+  if(m) linhas.push(m[2]);
+  return linhas;
 }
 
 function fmtReaisCompacto(v){
@@ -1294,7 +1307,7 @@ function renderGraficoRanking(entradas){
           afterFit:function(scale){
             var ctx = scale.ctx;
             ctx.save();
-            ctx.font = (scale.options.ticks.font.size || 10) + 'px sans-serif';
+            ctx.font = (scale.options.ticks.font.size || 10) + 'px ' + Chart.defaults.font.family;
             var maxW = 0;
             scale.chart.data.labels.forEach(function(label){
               (Array.isArray(label) ? label : [label]).forEach(function(linha){
