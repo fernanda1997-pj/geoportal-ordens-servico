@@ -529,6 +529,13 @@ def carregar_boletins(wb, pasta_pdf=None):
         docs = por_osp.setdefault(int(m.group(1)), {}).setdefault(int(m.group(2)), [])
         if all(d['arquivo'] != real for d in docs):
             docs.append({'tipo': tipo_do_boletim(real), 'arquivo': real, 'no_drive': True})
+    # A planilha às vezes lista o mesmo documento com o nome digitado errado
+    # ("CÁCULO") e o arquivo real existe com outro nome: se já há um PDF
+    # existente desse tipo na medição, descarta o item "sem arquivo".
+    for medicoes in por_osp.values():
+        for docs in medicoes.values():
+            tipos_ok = {d['tipo'] for d in docs if d['no_drive']}
+            docs[:] = [d for d in docs if d['no_drive'] or d['tipo'] not in tipos_ok]
     return por_osp
 
 
