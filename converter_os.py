@@ -680,6 +680,50 @@ def carregar_checklists(wb):
 #    começa na 106, e o inventário cita 2, 3, 88, 102, 104 (numeração de
 #    antes, de contrato anterior) — esses ficam de fora e vão pro relatório.
 # ---------------------------------------------------------------------
+def rotulo_levantamento(sufixo):
+    t = _norm(sufixo)
+    trecho = re.search(r'TRECHO\s*-?\s*(\d+)', t)
+    if 'DECLARACAO' in t:
+        r = 'Declaração'
+    elif 'MEMORIAL' in t:
+        r = 'Memorial de cálculo'
+    elif 'LEVANTAMENTO' in t or 'LENANTAMENTO' in t:
+        r = 'Levantamento'
+    elif 'ANEXO' in t:
+        r = 'Anexos'
+    else:
+        r = 'Inventário'
+    for chave, mod in (('ASSINAD', 'assinado'), ('ORIGINAL', 'original'), ('PREVI', 'prévio')):
+        if chave in t:
+            r += ' ' + mod
+            break
+    return r + (f' (trecho {trecho.group(1)})' if trecho else '')
+
+
+def carregar_levantamentos(pasta_inv):
+    """{nº da O.S.P.: [{tipo, arquivo, no_drive}]} lendo os PDFs de
+    LOTE XX/INVENTARIOS_PDF (levantamento, declaração, inventário da rodovia).
+    Dois padrões de nome: "INVENTARIO_OSP_0074_LEVANTAMENTO.pdf" e
+    "O.S.P. 040.2024.0094 - TRECHO 1 - MEMORIAL DE CALCULO.pdf". Só entra o
+    que existe de fato na pasta."""
+    por_osp = {}
+    if not os.path.isdir(pasta_inv):
+        return por_osp
+    for f in sorted(os.listdir(pasta_inv)):
+        if not f.lower().endswith('.pdf'):
+            continue
+        m = re.match(r'INVENTARIO_OSP_(\d+)_(.+)\.pdf$', f, flags=re.I)
+        if m:
+            osp, sufixo = int(m.group(1)), m.group(2)
+        else:
+            m = re.match(r'O\.S\.P\.\s*\d+\.\d{4}\.(\d+)\s*-\s*(.+)\.pdf$', f, flags=re.I)
+            if not m:
+                continue
+            osp, sufixo = int(m.group(1)), m.group(2)
+        por_osp.setdefault(osp, []).append({'tipo': rotulo_levantamento(sufixo), 'arquivo': f, 'no_drive': True})
+    return por_osp
+
+
 def carregar_inventario(wb):
     if 'BD_INVENTARIO' not in wb.sheetnames:
         return {}
@@ -738,6 +782,7 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
     medicoes_por_osp = carregar_medicoes(wb)
     checklists_por_osp = carregar_checklists(wb)
     boletins_por_osp = carregar_boletins(wb, os.path.join(os.path.dirname(caminho), 'BOLETIM_PDF'))
+    levantamentos_por_osp = carregar_levantamentos(os.path.join(os.path.dirname(caminho), 'INVENTARIOS_PDF'))
     justificativas_med = carregar_justificativas_med(wb)
 
     tipo_servico = 'restauracao' if regiao_num_planilha in REGIOES_RESTAURACAO else 'manutencao'
@@ -818,6 +863,7 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
             'atrasada': atrasada,
             'checklist': checklists_por_osp.get(osp),
             'medicoes': montar_medicoes(osp, registros_med, boletins_por_osp, justificativas_med),
+            'levantamento': levantamentos_por_osp.get(osp, []),
         }
 
         alvo = (resultados_por_regiao.setdefault(regiao_geo_label, []))
@@ -853,7 +899,7 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
             'situacao_final': 'Sem emissão', 'medido_mensal': montar_medido_mensal([]),
             'prazo_meses': None, 'prazo_limite': None, 'atrasada': None,
             'checklist': checklists_por_osp.get(osp),
-            'sem_emissao': True, 'inventario': arquivos,
+            'sem_emissao': True, 'inventario': arquivos, 'levantamento': levantamentos_por_osp.get(osp, []),
         }
         alvo = resultados_por_regiao.setdefault(regiao_geo_label, [])
         if geoms:

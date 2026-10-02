@@ -1532,15 +1532,25 @@ function blocoChecklist(c){
 function urlDriveBusca(arquivo){
   return 'https://drive.google.com/drive/search?q='+encodeURIComponent('"'+arquivo+'"');
 }
+function chipDoc(d){
+  if(!d.no_drive) return '<span class="chip-doc sem-arquivo" title="Este PDF ainda não está no Drive: '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+'</span>';
+  return '<a class="chip-doc" target="_blank" rel="noopener" data-arquivo="'+escaparHtml(d.arquivo)+'" href="'+urlDriveBusca(d.arquivo)+'" title="Abrir no Drive: '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+' ↗</a>';
+}
+
+// Levantamento / inventário da O.S.P. (PDFs de INVENTARIOS_PDF no Drive).
+function blocoLevantamento(docs){
+  if(!docs || !docs.length) return '';
+  return '<div style="margin-top:10px; border-top:1px dashed var(--borda); padding-top:8px;">'+
+    '<div style="font-size:12px;font-weight:700;color:var(--azul);">🗺️ Levantamento e inventário</div>'+
+    '<div style="margin-top:4px;font-size:10.5px;color:#334155;">'+docs.map(chipDoc).join('')+'</div></div>';
+}
+
 function blocoMedicoes(medicoes, valorPrevisto){
   if(!medicoes || !medicoes.length) return '';
   var total = medicoes.reduce(function(s, m){ return s + (m.valor || 0); }, 0);
   var pct = valorPrevisto > 0 ? ' ('+(total / valorPrevisto * 100).toFixed(1).replace('.', ',')+'% do previsto)' : '';
   var linhas = medicoes.map(function(m){
-    var docs = (m.docs || []).map(function(d){
-      if(!d.no_drive) return '<span class="chip-doc sem-arquivo" title="Este PDF ainda não está no Drive: '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+'</span>';
-      return '<a class="chip-doc" target="_blank" rel="noopener" data-arquivo="'+escaparHtml(d.arquivo)+'" href="'+urlDriveBusca(d.arquivo)+'" title="Abrir no Drive: '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+' ↗</a>';
-    }).join('');
+    var docs = (m.docs || []).map(chipDoc).join('');
     return '<div style="border-top:1px solid var(--borda);padding:6px 0;font-size:11.5px;">'+
       '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'+
         '<span><b>'+(m.n != null ? m.n+'ª medição' : 'Medição')+'</b> · '+escaparHtml(m.mes)+'</span>'+
@@ -1663,7 +1673,8 @@ function blocoOS(props, semGeometria){
       '<div class="total"><span>Valor previsto</span><b>'+fmtReais(props.valor_previsto)+'</b></div>'+
       (props.observacao ? '<div style="margin-top:6px; font-size:11px; color:#78350F;">'+props.observacao+'</div>' : '')+
       (props.sem_emissao ? '<div style="margin-top:8px; font-size:11.5px; color:#5B21B6;">📝 Criada no sistema, <b>ainda sem emissão</b> — só existem levantamento/inventário (sem valor, data nem situação lançados).'+
-        '<ul style="padding-left:18px;margin:4px 0;color:#334155;">'+(props.inventario||[]).map(function(a){ return '<li>'+escaparHtml(a)+'</li>'; }).join('')+'</ul></div>' : '')+
+        ((props.levantamento && props.levantamento.length) ? '</div>' : '<ul style="padding-left:18px;margin:4px 0;color:#334155;">'+(props.inventario||[]).map(function(a){ return '<li>'+escaparHtml(a)+'</li>'; }).join('')+'</ul></div>') : '')+
+      blocoLevantamento(props.levantamento)+
       blocoMedicoes(props.medicoes, props.valor_previsto)+
       blocoChecklist(props.checklist)+
       (semGeometria ? '<div style="margin-top:6px; font-size:11px; color:#78350F;">📍 Sem geometria de trecho cadastrada — entra nos totais/KPIs, mas não é possível desenhar no mapa.</div>' : '')+
