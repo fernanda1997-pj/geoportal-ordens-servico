@@ -294,6 +294,8 @@
 
 .chip-doc{background:#E2E8F0;border:0;border-radius:4px;padding:1px 6px;margin:1px 2px 1px 0;display:inline-block;font:inherit;font-size:10.5px;color:#334155;cursor:pointer;}
 .chip-doc:hover{background:#CBD5E1;}
+a.chip-doc{text-decoration:none;}
+.chip-doc.sem-arquivo{background:#F1F5F9;color:#94A3B8;cursor:default;border:1px dashed #CBD5E1;}
 .chip-doc.copiado{background:#BBF7D0;color:#166534;}
 
 /* ---------- Medições por mês (pesquisa rápida) ---------- */
@@ -1523,13 +1525,20 @@ function blocoChecklist(c){
 // uma linha por mês medido, com nº da medição, valor, situação na época, os
 // documentos do boletim (só os nomes — os PDFs ficam no Drive) e a
 // justificativa recolhida.
+// Link de BUSCA do Drive pelo nome exato do PDF (o Drive instalado no PC não
+// expõe o ID do arquivo, então não dá pra montar o link direto). Quem não tem
+// acesso à pasta SISTEMA_AGETO não vê resultado.
+function urlDriveBusca(arquivo){
+  return 'https://drive.google.com/drive/search?q='+encodeURIComponent('"'+arquivo+'"');
+}
 function blocoMedicoes(medicoes, valorPrevisto){
   if(!medicoes || !medicoes.length) return '';
   var total = medicoes.reduce(function(s, m){ return s + (m.valor || 0); }, 0);
   var pct = valorPrevisto > 0 ? ' ('+(total / valorPrevisto * 100).toFixed(1).replace('.', ',')+'% do previsto)' : '';
   var linhas = medicoes.map(function(m){
     var docs = (m.docs || []).map(function(d){
-      return '<button type="button" class="chip-doc" data-arquivo="'+escaparHtml(d.arquivo)+'" title="Copiar o nome do arquivo: '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+' 📋</button>';
+      if(!d.no_drive) return '<span class="chip-doc sem-arquivo" title="Este PDF ainda não está no Drive: '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+'</span>';
+      return '<a class="chip-doc" target="_blank" rel="noopener" data-arquivo="'+escaparHtml(d.arquivo)+'" href="'+urlDriveBusca(d.arquivo)+'" title="Abrir no Drive: '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+' ↗</a>';
     }).join('');
     return '<div style="border-top:1px solid var(--borda);padding:6px 0;font-size:11.5px;">'+
       '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'+
@@ -1549,88 +1558,13 @@ function blocoMedicoes(medicoes, valorPrevisto){
     linhas+'</div>';
 }
 
-// Copia o nome do arquivo do documento da medição (o PDF fica no Drive).
+// Ao abrir o documento no Drive, copia também o nome do arquivo (se a busca do
+// Drive não achar, é só colar na caixa de pesquisa).
 document.addEventListener('click', function(ev){
-  var b = ev.target.closest && ev.target.closest('.chip-doc');
+  var b = ev.target.closest && ev.target.closest('a.chip-doc');
   if(!b) return;
-  var nome = b.getAttribute('data-arquivo'), rotulo = b.getAttribute('data-rotulo') || b.textContent;
-  function ok(){
-    b.setAttribute('data-rotulo', rotulo); b.classList.add('copiado'); b.textContent = '✓ Nome copiado';
-    setTimeout(function(){ b.classList.remove('copiado'); b.textContent = rotulo; }, 1500);
-  }
-  function plano(){
-    var t = document.createElement('textarea'); t.value = nome; t.style.position = 'fixed'; t.style.opacity = '0';
-    document.body.appendChild(t); t.select();
-    try{ document.execCommand('copy'); ok(); }catch(e){} document.body.removeChild(t);
-  }
-  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(nome).then(ok, plano); } else plano();
-});
-
-// ---------------------------------------------------------------------
-// Medições por mês — pesquisa rápida: escolhe o mês e lista todas as medições
-// daquele mês (de todas as O.S.P. carregadas, independente dos filtros da
-// lateral), com total e filtro de texto. Clicar numa linha abre a O.S.P.
-// ---------------------------------------------------------------------
-function medicoesDoMes(mes){
-  var linhas = [];
-  entradasUnicasOS(todasFeaturesOS()).forEach(function(e){
-    (e.props.medicoes || []).forEach(function(m){
-      if(m.mes === mes) linhas.push({entrada: e, med: m});
-    });
-  });
-  return linhas;
-}
-function renderMedicoesMes(){
-  var mes = document.getElementById('medmes-sel-mes').value;
-  var busca = _semAcento(document.getElementById('medmes-busca').value.trim());
-  var linhas = medicoesDoMes(mes).filter(function(l){
-    if(!busca) return true;
-    var p = l.entrada.props;
-    var alvo = _semAcento([p.osp, p.contrato, p.contrato+'.'+String(p.osp).padStart(4,'0'), rotuloContrato(p.contrato), p.trecho_nome, l.med.status, p.servico].join(' '));
-    return alvo.indexOf(busca) !== -1;
-  });
-  linhas.sort(function(a, b){ return (b.med.valor || 0) - (a.med.valor || 0); });
-  var total = linhas.reduce(function(s, l){ return s + (l.med.valor || 0); }, 0);
-  document.getElementById('medmes-resumo').innerHTML = linhas.length
-    ? '<b>'+linhas.length+(linhas.length > 1 ? ' medições' : ' medição')+'</b> em '+escaparHtml(mes)+' · total <b>'+fmtReais(total)+'</b>'
-    : 'Nenhuma medição encontrada em '+escaparHtml(mes)+'.';
-  document.getElementById('medmes-lista').innerHTML = linhas.map(function(l, idx){
-    var p = l.entrada.props, m = l.med;
-    return '<div class="mm-linha" data-idx="'+idx+'">'+
-      '<div><b>O.S.P. '+p.osp+'</b> · '+escaparHtml(rodoviaCurta(p.trecho_nome || ''))+
-        '<small>'+escaparHtml(rotuloContrato(p.contrato))+' · '+escaparHtml(rotuloRegiao(p.regiao_os))+
-        (m.n != null ? ' · '+m.n+'ª medição' : '')+(m.periodo ? ' · '+escaparHtml(m.periodo) : '')+'</small></div>'+
-      '<div class="mm-valor"><b>'+fmtReais(m.valor || 0)+'</b><small style="color:'+corSituacao(m.status)+';font-weight:600;">'+escaparHtml(m.status || '')+'</small></div>'+
-      '</div>';
-  }).join('');
-  document.getElementById('medmes-lista')._linhas = linhas;
-}
-function _semAcento(t){ return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
-document.getElementById('btn-medicoes-mes').addEventListener('click', function(){
-  var meses = {};
-  todasFeaturesOS().forEach(function(f){ (f.properties.medicoes || []).forEach(function(m){ meses[m.mes] = true; }); });
-  var lista = ordenarMesesEmissao(Object.keys(meses));
-  var sel = document.getElementById('medmes-sel-mes');
-  var atual = sel.value;
-  sel.innerHTML = lista.map(function(m){ return '<option value="'+escaparHtml(m)+'">'+escaparHtml(m)+'</option>'; }).join('');
-  sel.value = lista.indexOf(atual) !== -1 ? atual : lista[lista.length - 1];
-  document.getElementById('medmes-overlay').classList.add('aberto');
-  renderMedicoesMes();
-});
-document.getElementById('medmes-sel-mes').addEventListener('change', renderMedicoesMes);
-document.getElementById('medmes-busca').addEventListener('input', renderMedicoesMes);
-document.getElementById('medmes-fechar').addEventListener('click', function(){
-  document.getElementById('medmes-overlay').classList.remove('aberto');
-});
-document.getElementById('medmes-overlay').addEventListener('click', function(ev){
-  if(ev.target === this) this.classList.remove('aberto');
-});
-document.getElementById('medmes-lista').addEventListener('click', function(ev){
-  var el = ev.target.closest('.mm-linha');
-  if(!el || !this._linhas) return;
-  var l = this._linhas[+el.getAttribute('data-idx')];
-  document.getElementById('medmes-overlay').classList.remove('aberto');
-  abrirOS(l.entrada);
+  var nome = b.getAttribute('data-arquivo');
+  try{ if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(nome); }catch(e){}
 });
 
 // Bloco de O.S.P. — conteúdo da gaveta ao clicar num item da lista.

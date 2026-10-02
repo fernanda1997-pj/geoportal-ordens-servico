@@ -476,13 +476,20 @@ def rotulo_doc_boletim(tipo_bruto):
     return tipo_bruto.strip().capitalize()
 
 
-def carregar_boletins(wb):
+def carregar_boletins(wb, pasta_pdf=None):
     """{osp: {nº da medição: [{tipo, arquivo}, ...]}} — tipo = trecho final
     do nome do arquivo ("BOLETIM_OSP_0078_MED_11ª MEDIÇÃO_MEMORIA DE CALCULO.pdf"
     -> "Memória de cálculo")."""
     if 'BD_BOLETIM' not in wb.sheetnames:
         return {}
     ws = wb['BD_BOLETIM']
+    # PDFs de fato presentes em LOTE XX/BOLETIM_PDF (a planilha lista nomes que
+    # às vezes ainda não foram subidos, ou sem os acentos do arquivo real).
+    # Chave sem acento/caixa -> nome real do arquivo no Drive.
+    no_drive = {}
+    if pasta_pdf and os.path.isdir(pasta_pdf):
+        for f in os.listdir(pasta_pdf):
+            no_drive[_norm(f)] = f
     por_osp = {}
     for r in range(1, ws.max_row + 1):
         osp = _int_seguro(ws.cell(row=r, column=1).value)
@@ -500,9 +507,12 @@ def carregar_boletins(wb):
         tipo_bruto = sufixo.group(1) if sufixo else ''
         tipo = rotulo_doc_boletim(tipo_bruto)
         arquivo = str(nome).strip()
+        real = no_drive.get(_norm(arquivo))
         docs = por_osp.setdefault(osp, {}).setdefault(int(m.group(1)), [])
-        if all(d['arquivo'] != arquivo for d in docs):
-            docs.append({'tipo': tipo, 'arquivo': arquivo})
+        if all(d['arquivo'] != (real or arquivo) for d in docs):
+            # 'no_drive' = o PDF existe mesmo no Drive (nome real, com acentos);
+            # senão fica o nome da planilha e o geoportal não oferece abrir.
+            docs.append({'tipo': tipo, 'arquivo': real or arquivo, 'no_drive': bool(real)})
     return por_osp
 
 
@@ -704,7 +714,7 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
     servicos_por_osp = carregar_servicos_por_osp(wb, catalogo_itens)
     medicoes_por_osp = carregar_medicoes(wb)
     checklists_por_osp = carregar_checklists(wb)
-    boletins_por_osp = carregar_boletins(wb)
+    boletins_por_osp = carregar_boletins(wb, os.path.join(os.path.dirname(caminho), 'BOLETIM_PDF'))
     justificativas_med = carregar_justificativas_med(wb)
 
     tipo_servico = 'restauracao' if regiao_num_planilha in REGIOES_RESTAURACAO else 'manutencao'
