@@ -477,7 +477,7 @@ def rotulo_doc_boletim(tipo_bruto):
 
 
 def carregar_boletins(wb):
-    """{osp: {nº da medição: [tipo do documento, ...]}} — tipo = trecho final
+    """{osp: {nº da medição: [{tipo, arquivo}, ...]}} — tipo = trecho final
     do nome do arquivo ("BOLETIM_OSP_0078_MED_11ª MEDIÇÃO_MEMORIA DE CALCULO.pdf"
     -> "Memória de cálculo")."""
     if 'BD_BOLETIM' not in wb.sheetnames:
@@ -499,9 +499,10 @@ def carregar_boletins(wb):
         sufixo = re.search(r'MEDI[ÇC][ÃA]O[^_]*_(.+?)(?:\.pdf)?$', str(nome).strip(), flags=re.I)
         tipo_bruto = sufixo.group(1) if sufixo else ''
         tipo = rotulo_doc_boletim(tipo_bruto)
+        arquivo = str(nome).strip()
         docs = por_osp.setdefault(osp, {}).setdefault(int(m.group(1)), [])
-        if tipo not in docs:
-            docs.append(tipo)
+        if all(d['arquivo'] != arquivo for d in docs):
+            docs.append({'tipo': tipo, 'arquivo': arquivo})
     return por_osp
 
 

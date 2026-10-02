@@ -291,6 +291,10 @@
     .dash-kpis{grid-template-columns:repeat(3, 1fr);}
     .dash-graficos{grid-template-columns:1fr;}
   }
+
+.chip-doc{background:#E2E8F0;border:0;border-radius:4px;padding:1px 6px;margin:1px 2px 1px 0;display:inline-block;font:inherit;font-size:10.5px;color:#334155;cursor:pointer;}
+.chip-doc:hover{background:#CBD5E1;}
+.chip-doc.copiado{background:#BBF7D0;color:#166534;}
 </style>
 </head>
 <body>
@@ -1495,7 +1499,7 @@ function blocoMedicoes(medicoes, valorPrevisto){
   var pct = valorPrevisto > 0 ? ' ('+(total / valorPrevisto * 100).toFixed(1).replace('.', ',')+'% do previsto)' : '';
   var linhas = medicoes.map(function(m){
     var docs = (m.docs || []).map(function(d){
-      return '<span style="background:#E2E8F0;border-radius:4px;padding:1px 5px;margin:1px 2px 1px 0;display:inline-block;">'+escaparHtml(d)+'</span>';
+      return '<button type="button" class="chip-doc" data-arquivo="'+escaparHtml(d.arquivo)+'" title="Copiar o nome do arquivo: '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+' 📋</button>';
     }).join('');
     return '<div style="border-top:1px solid var(--borda);padding:6px 0;font-size:11.5px;">'+
       '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'+
@@ -1514,6 +1518,23 @@ function blocoMedicoes(medicoes, valorPrevisto){
     '<div style="font-size:12px;margin:3px 0 2px;">'+medicoes.length+(medicoes.length > 1 ? ' medições' : ' medição')+' · total medido <b>'+fmtReais(total)+'</b>'+pct+'</div>'+
     linhas+'</div>';
 }
+
+// Copia o nome do arquivo do documento da medição (o PDF fica no Drive).
+document.addEventListener('click', function(ev){
+  var b = ev.target.closest && ev.target.closest('.chip-doc');
+  if(!b) return;
+  var nome = b.getAttribute('data-arquivo'), rotulo = b.getAttribute('data-rotulo') || b.textContent;
+  function ok(){
+    b.setAttribute('data-rotulo', rotulo); b.classList.add('copiado'); b.textContent = '✓ Nome copiado';
+    setTimeout(function(){ b.classList.remove('copiado'); b.textContent = rotulo; }, 1500);
+  }
+  function plano(){
+    var t = document.createElement('textarea'); t.value = nome; t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.select();
+    try{ document.execCommand('copy'); ok(); }catch(e){} document.body.removeChild(t);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(nome).then(ok, plano); } else plano();
+});
 
 // Bloco de O.S.P. — conteúdo da gaveta ao clicar num item da lista.
 function blocoOS(props, semGeometria){
