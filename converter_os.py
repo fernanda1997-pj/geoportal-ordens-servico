@@ -394,6 +394,7 @@ def carregar_medicoes(wb):
     ws = wb['BD_MED']
     cols = _mapa_colunas(ws)
     col_osp, col_data, col_valor = cols.get('BD_OSP'), cols.get('DATA'), cols.get('MEDICAO 1')
+    col_num, col_periodo, col_status = cols.get('MEDICAO'), cols.get('PERIODO'), cols.get('STATUS')
     if not (col_osp and col_data):
         return {}
     por_osp = {}
@@ -405,7 +406,15 @@ def carregar_medicoes(wb):
         if mes_nome is None:
             continue
         valor = _float_br(ws.cell(row=r, column=col_valor).value) if col_valor else None
-        por_osp.setdefault(osp, []).append({'mes': mes_nome, 'ano': ano, 'valor': valor or 0})
+        status_raw = ws.cell(row=r, column=col_status).value if col_status else None
+        status_chave = _norm(status_raw)
+        periodo = ws.cell(row=r, column=col_periodo).value if col_periodo else None
+        por_osp.setdefault(osp, []).append({
+            'mes': mes_nome, 'ano': ano, 'valor': valor or 0,
+            'n': _int_seguro(ws.cell(row=r, column=col_num).value) if col_num else None,
+            'periodo': re.sub(r'\s+', ' ', str(periodo)).strip() if periodo else None,
+            'status': STATUS_MAP.get(status_chave) or (str(status_raw).strip() if status_chave not in ('', '0') else None),
+        })
     for registros in por_osp.values():
         registros.sort(key=lambda m: (m['ano'], MESES_ORDEM.index(m['mes'])))
     return por_osp
@@ -426,6 +435,105 @@ def montar_meses_cronograma(registros):
         chave = f"{reg['mes']}/{reg['ano']}"
         vistos[chave] = True
     return sorted(vistos.keys(), key=lambda s: (int(s.split('/')[1]), MESES_ORDEM.index(s.split('/')[0])))
+
+
+# ---------------------------------------------------------------------
+# MEDIÇÕES por O.S.P. (mostradas na gaveta de detalhe): BD_MED (1 linha por
+# O.S.P. por medição: nº, período, valor medido, situação — a soma bate com
+# MEDIDO de BD_OSP, conferido em 83 de 83 O.S.P. da Região 13) + BD_BOLETIM
+# (nome dos PDFs do boletim de cada medição) + JUSTIFICATIVA_MED (texto da
+# justificativa de cada medição). Os PDFs em si ficam no Drive — o geoportal
+# só mostra quais documentos existem.
+# ---------------------------------------------------------------------
+# Regras em ordem: a primeira que casar (no nome SEM acento) define o rótulo.
+# Os nomes dos arquivos vêm bagunçados ("MEMORIA", "MEMORIAL DE CALCULO",
+# "RELATORIO OSP 091"...), então classifica por palavra-chave.
+REGRAS_DOC_BOLETIM = [
+    ('JUSTIFICATIVA', 'Justificativa técnica'),
+    ('FOTOGRAF', 'Relatório fotográfico'),
+    ('MEMORI', 'Memória de cálculo'),
+    ('DIARIO', 'Diário de obras'),
+    ('TECNOLOGICO', 'Controle tecnológico'),
+    ('INSPECAO', 'Relatório de inspeção'),
+    ('BOLETIM', 'Boletim da O.S.P.'),
+    ('RELATORIO OSP', 'Relatório da O.S.P.'),
+    ('MEDICAO', 'Relatório de medição'),
+    ('RELATORIO', 'Relatório de medição'),
+    ('ANEXO', 'Anexos'),
+    ('COMPLEMENTAR', 'Anexos'),
+]
+
+
+def rotulo_doc_boletim(tipo_bruto):
+    t = _norm(tipo_bruto.replace('.pdf', ''))
+    if not t.strip():
+        return 'Boletim de medição'
+    if sum(k in t for k in ('MEMORI', 'FOTOGRAF', 'JUSTIFICATIVA')) >= 2:
+        return 'Memória, fotos e justificativa'
+    for chave, rotulo in REGRAS_DOC_BOLETIM:
+        if chave in t:
+            return rotulo
+    return tipo_bruto.strip().capitalize()
+
+
+def carregar_boletins(wb):
+    """{osp: {nº da medição: [tipo do documento, ...]}} — tipo = trecho final
+    do nome do arquivo ("BOLETIM_OSP_0078_MED_11ª MEDIÇÃO_MEMORIA DE CALCULO.pdf"
+    -> "Memória de cálculo")."""
+    if 'BD_BOLETIM' not in wb.sheetnames:
+        return {}
+    ws = wb['BD_BOLETIM']
+    por_osp = {}
+    for r in range(1, ws.max_row + 1):
+        osp = _int_seguro(ws.cell(row=r, column=1).value)
+        nome = ws.cell(row=r, column=2).value
+        if osp is None or not nome:
+            continue
+        m = re.search(r'MED_(\d+)', str(nome))
+        if not m:
+            continue
+        # Tipo = o que vem depois de "MEDIÇÃO_" ("..._11ª MEDIÇÃO_MEMORIA DE
+        # CALCULO.pdf"); boletim sem sufixo (só "..._13ª MEDIÇÃO.pdf") vira
+        # "Boletim de medição". Os nomes dos arquivos vêm SEM acento, por
+        # isso o rótulo passa por rotulo_doc_boletim().
+        sufixo = re.search(r'MEDI[ÇC][ÃA]O[^_]*_(.+?)(?:\.pdf)?$', str(nome).strip(), flags=re.I)
+        tipo_bruto = sufixo.group(1) if sufixo else ''
+        tipo = rotulo_doc_boletim(tipo_bruto)
+        docs = por_osp.setdefault(osp, {}).setdefault(int(m.group(1)), [])
+        if tipo not in docs:
+            docs.append(tipo)
+    return por_osp
+
+
+def carregar_justificativas_med(wb):
+    """{(osp, nº da medição): texto da justificativa}."""
+    if 'JUSTIFICATIVA_MED' not in wb.sheetnames:
+        return {}
+    ws = wb['JUSTIFICATIVA_MED']
+    cols = _mapa_colunas(ws)
+    c_osp, c_num, c_txt = cols.get('NUM_OSP'), cols.get('NUMERO MED'), cols.get('TEXTO_JUSTIFICATIVA')
+    if not (c_osp and c_num and c_txt):
+        return {}
+    textos = {}
+    for r in range(2, ws.max_row + 1):
+        osp, n = _int_seguro(ws.cell(row=r, column=c_osp).value), _int_seguro(ws.cell(row=r, column=c_num).value)
+        txt = ws.cell(row=r, column=c_txt).value
+        if osp is not None and n is not None and txt and str(txt).strip():
+            textos[(osp, n)] = re.sub(r'[ \t]+', ' ', str(txt)).strip()
+    return textos
+
+
+def montar_medicoes(osp, registros, boletins, justificativas):
+    medicoes = []
+    for reg in registros:
+        n = reg.get('n')
+        medicoes.append({
+            'n': n, 'mes': f"{reg['mes']}/{reg['ano']}", 'periodo': reg.get('periodo'),
+            'valor': reg['valor'], 'status': reg.get('status'),
+            'docs': boletins.get(osp, {}).get(n, []),
+            'justificativa': justificativas.get((osp, n)),
+        })
+    return medicoes
 
 
 # ---------------------------------------------------------------------
@@ -595,6 +703,8 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
     servicos_por_osp = carregar_servicos_por_osp(wb, catalogo_itens)
     medicoes_por_osp = carregar_medicoes(wb)
     checklists_por_osp = carregar_checklists(wb)
+    boletins_por_osp = carregar_boletins(wb)
+    justificativas_med = carregar_justificativas_med(wb)
 
     tipo_servico = 'restauracao' if regiao_num_planilha in REGIOES_RESTAURACAO else 'manutencao'
     regiao_geo = MAPA_REGIAO_GEOGRAFICA.get(regiao_num_planilha, regiao_num_planilha)
@@ -673,6 +783,7 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
             'prazo_limite': prazo_limite,
             'atrasada': atrasada,
             'checklist': checklists_por_osp.get(osp),
+            'medicoes': montar_medicoes(osp, registros_med, boletins_por_osp, justificativas_med),
         }
 
         alvo = (resultados_por_regiao.setdefault(regiao_geo_label, []))

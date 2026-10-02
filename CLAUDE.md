@@ -334,3 +334,12 @@ Quarto geoportal da família RTA-MSI (mesmas logos/paleta, apps independentes):
 - `C:\1. Projetos\RTA\web - fichas` (pasta `ficha-inspecao/`) — Inspeção do Pavimento.
   Este projeto (`web - OS`) morava dentro desse repo até 2026-08-18, quando virou
   independente a pedido da usuária.
+
+## Medições da O.S.P.
+
+O drawer de detalhe mostra o bloco "📏 Medições" (`blocoMedicoes()` em `index.html`), antes do checklist.
+
+- Fonte (BD_LOTE_XX.xlsx): `BD_MED` (por OSP e medição: DATA, PERIODO, nº, "MEDIÇÃO 1" = valor, STATUS), `BD_BOLETIM` (nomes dos PDFs), `JUSTIFICATIVA_MED` (texto por OSP + medição). A soma das medições bate com `MEDIDO` de `BD_OSP`.
+- Propriedade `medicoes` = lista de `{n, mes, periodo, valor, status, docs, justificativa}` (montada por `montar_medicoes()` no `converter_os.py`).
+- Os PDFs ficam no Drive; o geoportal só mostra os NOMES/tipos dos documentos (chips), sem link.
+- Os nomes de arquivo são bagunçados ("MEMORIA", "MEMORIAL DE CALCULO", "RELATORIO OSP 091", prefixo `INSP_CONSOL_`...), então `rotulo_doc_boletim()` classifica por palavra-chave (`REGRAS_DOC_BOLETIM`, a ordem importa). Nome sem sufixo vira "Boletim de medição".

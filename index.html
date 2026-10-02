@@ -1485,6 +1485,36 @@ function blocoChecklist(c){
     '</div>';
 }
 
+// Medições da O.S.P. (BD_MED + boletins + justificativas, ver converter_os.py):
+// uma linha por mês medido, com nº da medição, valor, situação na época, os
+// documentos do boletim (só os nomes — os PDFs ficam no Drive) e a
+// justificativa recolhida.
+function blocoMedicoes(medicoes, valorPrevisto){
+  if(!medicoes || !medicoes.length) return '';
+  var total = medicoes.reduce(function(s, m){ return s + (m.valor || 0); }, 0);
+  var pct = valorPrevisto > 0 ? ' ('+(total / valorPrevisto * 100).toFixed(1).replace('.', ',')+'% do previsto)' : '';
+  var linhas = medicoes.map(function(m){
+    var docs = (m.docs || []).map(function(d){
+      return '<span style="background:#E2E8F0;border-radius:4px;padding:1px 5px;margin:1px 2px 1px 0;display:inline-block;">'+escaparHtml(d)+'</span>';
+    }).join('');
+    return '<div style="border-top:1px solid var(--borda);padding:6px 0;font-size:11.5px;">'+
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'+
+        '<span><b>'+(m.n != null ? m.n+'ª medição' : 'Medição')+'</b> · '+escaparHtml(m.mes)+'</span>'+
+        '<span><b>'+fmtReais(m.valor || 0)+'</b></span></div>'+
+      '<div style="color:var(--cinza);font-size:10.5px;margin-top:1px;">'+
+        (m.periodo ? escaparHtml(m.periodo) : '')+
+        (m.status ? ' · <span style="color:'+corSituacao(m.status)+';font-weight:600;">'+escaparHtml(m.status)+'</span>' : '')+'</div>'+
+      (docs ? '<div style="margin-top:3px;font-size:10.5px;color:#334155;">'+docs+'</div>' : '')+
+      (m.justificativa ? '<details style="margin-top:3px;"><summary style="cursor:pointer;color:var(--cinza);font-size:10.5px;">Justificativa</summary>'+
+        '<div style="font-size:11px;margin-top:3px;white-space:pre-line;">'+escaparHtml(m.justificativa)+'</div></details>' : '')+
+      '</div>';
+  }).join('');
+  return '<div style="margin-top:10px; border-top:1px dashed var(--borda); padding-top:8px;">'+
+    '<div style="font-size:12px;font-weight:700;color:var(--azul);">📏 Medições</div>'+
+    '<div style="font-size:12px;margin:3px 0 2px;">'+medicoes.length+(medicoes.length > 1 ? ' medições' : ' medição')+' · total medido <b>'+fmtReais(total)+'</b>'+pct+'</div>'+
+    linhas+'</div>';
+}
+
 // Bloco de O.S.P. — conteúdo da gaveta ao clicar num item da lista.
 function blocoOS(props, semGeometria){
   var cor = corSituacao(props.situacao);
@@ -1503,6 +1533,7 @@ function blocoOS(props, semGeometria){
       (props.observacao ? '<div style="margin-top:6px; font-size:11px; color:#78350F;">'+props.observacao+'</div>' : '')+
       (props.sem_emissao ? '<div style="margin-top:8px; font-size:11.5px; color:#5B21B6;">📝 Criada no sistema, <b>ainda sem emissão</b> — só existem levantamento/inventário (sem valor, data nem situação lançados).'+
         '<ul style="padding-left:18px;margin:4px 0;color:#334155;">'+(props.inventario||[]).map(function(a){ return '<li>'+escaparHtml(a)+'</li>'; }).join('')+'</ul></div>' : '')+
+      blocoMedicoes(props.medicoes, props.valor_previsto)+
       blocoChecklist(props.checklist)+
       (semGeometria ? '<div style="margin-top:6px; font-size:11px; color:#78350F;">📍 Sem geometria de trecho cadastrada — entra nos totais/KPIs, mas não é possível desenhar no mapa.</div>' : '')+
     '</div>'
