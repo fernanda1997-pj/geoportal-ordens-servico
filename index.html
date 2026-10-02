@@ -492,6 +492,9 @@ var CORES_SITUACAO = {
   // Novas desde a troca pro banco de dados do órgão (2026-10) — não
   // existiam na planilha manual antiga.
   'Liberada': '#0EA5E9', 'Para Emissão': '#CA8A04',
+  // Supervisão devolveu a O.S.P. pra correção antes de emitir — cor própria
+  // (não é a mesma de Correção Fiscal, que é outra etapa).
+  'Correção Super': '#EA580C',
 };
 function corSituacao(s){ return CORES_SITUACAO[s] || '#94A3B8'; }
 // "-" na planilha não é uma situação de verdade (não está na lista oficial
@@ -504,7 +507,7 @@ var ICONES_SITUACAO = {
   'Concluída': '✅', 'Em andamento': '🔧', 'Em elaboração': '✏️',
   'Justificada': '📄', 'Cancelada': '🚫', 'Correção Fiscal': '💲',
   'Análise Gestor': '🔎', '-': '❔', 'Não informada': '❔',
-  'Liberada': '🔓', 'Para Emissão': '🆕',
+  'Liberada': '🔓', 'Para Emissão': '🆕', 'Correção Super': '🛠️',
 };
 function iconeSituacao(s){ return ICONES_SITUACAO[s] || ''; }
 // Ícone + rótulo prontos pra jogar dentro de um badge/pill.
@@ -1032,6 +1035,7 @@ function renderizarListaOS(){
         '<div class="rodape">'+
           '<span class="badge-situacao" style="background:'+corSituacao(p.situacao)+'">'+rotuloComIcone(p.situacao)+'</span>'+
           (p.atrasada ? '<span class="badge-situacao" style="background:#B91C1C" title="Prazo final era '+p.prazo_limite+'">⏰ Atrasada</span>' : '')+
+          (p.checklist && p.checklist.n_nao ? '<span class="badge-situacao" style="background:#9A3412" title="Itens do checklist da supervisão marcados como NÃO">📋 '+p.checklist.n_nao+'</span>' : '')+
           '<span class="valor">'+fmtReais(p.valor_previsto)+'</span>'+
         '</div>'+
         '<div class="tag-tipo">'+rotuloRegiao(p.regiao_os)+' · '+(p.tipo_servico === 'restauracao' ? 'Restauração' : 'Manutenção')+'</div>'+
@@ -1446,6 +1450,39 @@ document.getElementById('export-gerar').addEventListener('click', async function
   }
 });
 
+function escaparHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'}[c];
+  });
+}
+
+// Checklist da supervisão (vem de BD_CHECK_OSP + texto dos itens, ver
+// converter_os.py) — o que antes só dava pra ver abrindo a aba CHECKLIST_OSP
+// no sistema. Itens "NÃO" = o que precisa ser corrigido, vêm primeiro e
+// abertos; observações em itens SIM/N.A. ficam recolhidas.
+function blocoChecklist(c){
+  if(!c) return '';
+  var total = c.n_sim + c.n_nao + c.n_na;
+  var resumo = c.n_nao
+    ? '<b style="color:#B91C1C">'+c.n_nao+' pendência'+(c.n_nao > 1 ? 's' : '')+'</b> de '+total+' itens avaliados'
+    : '<b style="color:#15803D">Nenhuma pendência</b> em '+total+' itens avaliados';
+  var pend = c.pendencias.map(function(p){
+    return '<li style="margin:5px 0;"><b>'+escaparHtml(p.item)+'</b> '+escaparHtml(p.descricao)+
+      (p.obs ? '<div style="color:#B91C1C;font-size:11px;margin-top:2px;">Obs.: '+escaparHtml(p.obs)+'</div>' : '')+'</li>';
+  }).join('');
+  var obsOutras = c.observacoes.map(function(o){
+    return '<li style="margin:5px 0;"><b>'+escaparHtml(o.item)+'</b> <span style="color:var(--cinza);">('+(o.resposta === 'NA' ? 'N.A.' : 'Sim')+')</span> '+
+      escaparHtml(o.descricao)+'<div style="font-size:11px;margin-top:2px;">Obs.: '+escaparHtml(o.obs)+'</div></li>';
+  }).join('');
+  return '<div style="margin-top:10px; border-top:1px dashed var(--borda); padding-top:8px;">'+
+    '<div style="font-size:12px;font-weight:700;color:var(--azul);">📋 Checklist da supervisão</div>'+
+    '<div style="font-size:12px;margin:3px 0 4px;">'+resumo+'</div>'+
+    (pend ? '<ul style="font-size:11.5px;padding-left:18px;margin:4px 0;">'+pend+'</ul>' : '')+
+    (obsOutras ? '<details style="font-size:11.5px;margin-top:4px;"><summary style="cursor:pointer;color:var(--cinza);">Observações em outros itens ('+c.observacoes.length+')</summary>'+
+      '<ul style="padding-left:18px;margin:4px 0;">'+obsOutras+'</ul></details>' : '')+
+    '</div>';
+}
+
 // Bloco de O.S.P. — conteúdo da gaveta ao clicar num item da lista.
 function blocoOS(props, semGeometria){
   var cor = corSituacao(props.situacao);
@@ -1462,6 +1499,7 @@ function blocoOS(props, semGeometria){
       '<div class="linha"><span class="rot">Tipo</span><span class="val">'+(props.tipo_servico === 'restauracao' ? 'Restauração' : 'Manutenção')+' ('+props.regiao_os+')</span></div>'+
       '<div class="total"><span>Valor previsto</span><b>'+fmtReais(props.valor_previsto)+'</b></div>'+
       (props.observacao ? '<div style="margin-top:6px; font-size:11px; color:#78350F;">'+props.observacao+'</div>' : '')+
+      blocoChecklist(props.checklist)+
       (semGeometria ? '<div style="margin-top:6px; font-size:11px; color:#78350F;">📍 Sem geometria de trecho cadastrada — entra nos totais/KPIs, mas não é possível desenhar no mapa.</div>' : '')+
     '</div>'
   );

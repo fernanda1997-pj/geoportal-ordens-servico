@@ -87,9 +87,12 @@ MESES_PT = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
 MESES_COMPLETO_MAP = {nome.upper(): nome for nome in MESES_ORDEM}
 
 # Vocabulário de SITUAÇÃO do banco (tudo maiúsculo) -> rótulo usado no
-# geoportal (mesmo Título Capitalizado de sempre). "CORREÇÃO SUPER" só
-# aparece na Região 13 — tratado como sinônimo de "Correção Fiscal" até a
-# usuária dizer o contrário. "LIBERADA"/"PARA EMISSÃO" são situações novas
+# geoportal (mesmo Título Capitalizado de sempre). "CORREÇÃO SUPER" = a
+# supervisora devolveu a O.S.P. pra correção ANTES de emitir (a usuária
+# explicou em 2026-10-02) — situação PRÓPRIA, não é sinônimo de "Correção
+# Fiscal" (1ª versão tratava como sinônimo, estava errado; o checklist da
+# supervisão, ver carregar_checklists(), mostra o que precisa corrigir).
+# "LIBERADA"/"PARA EMISSÃO" são situações novas
 # que a planilha antiga não tinha (ver CORES_SITUACAO/ICONES_SITUACAO no
 # index.html, também atualizados).
 ## Chaves SEM acento de propósito — são comparadas contra _norm(), que
@@ -104,7 +107,7 @@ STATUS_MAP = {
     'JUSTIFICADA': 'Justificada',
     'CANCELADA': 'Cancelada',
     'CORRECAO FISCAL': 'Correção Fiscal',
-    'CORRECAO SUPER': 'Correção Fiscal',
+    'CORRECAO SUPER': 'Correção Super',
     'ANALISE GESTOR': 'Análise Gestor',
     'LIBERADA': 'Liberada',
     'PARA EMISSAO': 'Para Emissão',
@@ -426,6 +429,105 @@ def montar_meses_cronograma(registros):
 
 
 # ---------------------------------------------------------------------
+# CHECKLIST DA SUPERVISÃO (aba CHECKLIST_OSP do sistema principal, que a
+# equipe demorava a abrir) — dá a lista do que precisa ser corrigido quando
+# a O.S.P. está em "Correção Super".
+#
+# As RESPOSTAS ficam em BD_CHECK_OSP de cada banco: cabeçalho da linha 1 =
+# nº da O.S.P. (uma coluna por O.S.P.), cada linha a partir da 10 = 1 item
+# do checklist, célula no formato "SIM|NÃO|NA|observação" (ex. "X|||" = SIM;
+# "|X||FOTOS INAPLICÁVEIS" = NÃO com observação; "||X|" = NA; "|||" = não
+# respondido). O TEXTO dos itens (1.1, 1.2...) não está no banco — vem da
+# aba CHECKLIST_OSP de "Sistema de Gestão OSP – AGETO_V*.xlsm": a linha N
+# dessa aba corresponde à linha N-3 de BD_CHECK_OSP (conferido contra o
+# checklist real da O.S.P. 051.2024.0163: itens 1.8 em NÃO, 1.3 e 2.2 em NA).
+# ---------------------------------------------------------------------
+OFFSET_LINHA_CHECKLIST = 3
+CACHE_CHECKLIST = os.path.join(DADOS_DIR, 'checklist_itens.json')
+_catalogo_checklist = None
+
+
+def carregar_catalogo_checklist():
+    """{linha_BD_CHECK_OSP: (codigo, descricao, eh_titulo_de_grupo)}. Lê do
+    sistema principal (arquivo grande, ~8 MB — só 1 vez por rodada) e guarda
+    cópia em dados/checklist_itens.json; se o sistema não estiver acessível,
+    usa a cópia da última rodada."""
+    global _catalogo_checklist
+    if _catalogo_checklist is not None:
+        return _catalogo_checklist
+    catalogo = {}
+    mestres = sorted(
+        f for f in glob.glob(os.path.join(BASE_SISTEMA, 'Sistema de Gest*.xlsm'))
+        if not os.path.basename(f).startswith('~$')
+    )
+    if mestres:
+        try:
+            wm = openpyxl.load_workbook(mestres[-1], data_only=True, keep_vba=False, read_only=True)
+            ws = wm['CHECKLIST_OSP']
+            for n, (codigo, descricao) in enumerate(
+                    ws.iter_rows(min_row=1, max_row=400, min_col=2, max_col=3, values_only=True), start=1):
+                if n < 13 or codigo in (None, '') or not descricao:
+                    continue
+                codigo = str(codigo).strip()
+                catalogo[n - OFFSET_LINHA_CHECKLIST] = (codigo, str(descricao).strip(), codigo.endswith('.'))
+            wm.close()
+            with open(CACHE_CHECKLIST, 'w', encoding='utf-8') as f:
+                json.dump({str(k): list(v) for k, v in catalogo.items()}, f, ensure_ascii=False)
+        except Exception as e:
+            qa(f'{mestres[-1]}: falha ao ler CHECKLIST_OSP ({e}) — tentando cópia da última rodada')
+            catalogo = {}
+    if not catalogo and os.path.exists(CACHE_CHECKLIST):
+        with open(CACHE_CHECKLIST, encoding='utf-8') as f:
+            catalogo = {int(k): tuple(v) for k, v in json.load(f).items()}
+    if not catalogo:
+        qa('Texto dos itens do checklist indisponível (sistema principal não acessível e sem cópia) — checklist não gerado')
+    _catalogo_checklist = catalogo
+    return catalogo
+
+
+def carregar_checklists(wb):
+    """{osp: {'n_sim','n_nao','n_na','pendencias':[{item,descricao,obs}],
+    'observacoes':[{item,resposta,descricao,obs}]}} — só O.S.P. que tiveram
+    pelo menos 1 item respondido. 'pendencias' = itens marcados NÃO (o que a
+    supervisão precisa corrigir); 'observacoes' = SIM/NA com comentário."""
+    catalogo = carregar_catalogo_checklist()
+    if not catalogo or 'BD_CHECK_OSP' not in wb.sheetnames:
+        return {}
+    ws = wb['BD_CHECK_OSP']
+    resultado = {}
+    for c in range(2, ws.max_column + 1):
+        osp = _int_seguro(ws.cell(row=1, column=c).value)
+        if osp is None:
+            continue
+        info = {'n_sim': 0, 'n_nao': 0, 'n_na': 0, 'pendencias': [], 'observacoes': []}
+        for linha in range(10, ws.max_row + 1):
+            item = catalogo.get(linha)
+            if not item or item[2]:  # sem texto no catálogo, ou título de grupo
+                continue
+            bruto = ws.cell(row=linha, column=c).value
+            if not isinstance(bruto, str) or '|' not in bruto:
+                continue
+            partes = bruto.split('|')
+            partes += [''] * (4 - len(partes))
+            sim, nao, na = (partes[i].strip() != '' for i in range(3))
+            obs = '|'.join(partes[3:]).strip()
+            if not (sim or nao or na):
+                continue
+            codigo, descricao, _ = item
+            if nao:
+                info['n_nao'] += 1
+                info['pendencias'].append({'item': codigo, 'descricao': descricao, 'obs': obs})
+            else:
+                info['n_sim' if sim else 'n_na'] += 1
+                if obs:
+                    info['observacoes'].append({'item': codigo, 'resposta': 'SIM' if sim else 'NA',
+                                                'descricao': descricao, 'obs': obs})
+        if info['n_sim'] + info['n_nao'] + info['n_na']:
+            resultado[osp] = info
+    return resultado
+
+
+# ---------------------------------------------------------------------
 # BD_OSP — uma linha por O.S.P.+trecho. Fonte principal: data de emissão,
 # trecho, situação, valor previsto/executado.
 # ---------------------------------------------------------------------
@@ -451,6 +553,7 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
     catalogo_itens = carregar_catalogo_itens(wb)
     servicos_por_osp = carregar_servicos_por_osp(wb, catalogo_itens)
     medicoes_por_osp = carregar_medicoes(wb)
+    checklists_por_osp = carregar_checklists(wb)
 
     tipo_servico = 'restauracao' if regiao_num_planilha in REGIOES_RESTAURACAO else 'manutencao'
     regiao_geo = MAPA_REGIAO_GEOGRAFICA.get(regiao_num_planilha, regiao_num_planilha)
@@ -526,6 +629,7 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
             'prazo_meses': prazo_meses,
             'prazo_limite': prazo_limite,
             'atrasada': atrasada,
+            'checklist': checklists_por_osp.get(osp),
         }
 
         alvo = (resultados_por_regiao.setdefault(regiao_geo_label, []))

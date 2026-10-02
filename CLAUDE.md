@@ -67,8 +67,8 @@ nas 12 regiões):**
   além de Em elaboração/Em andamento/Concluída/Justificada/Cancelada/
   Correção Fiscal/Análise Gestor, o banco tem **Liberada** e **Para Emissão**
   (novas, com cor/ícone em `CORES_SITUACAO`/`ICONES_SITUACAO`) e
-  **Correção Super** (só Região 13 — tratada como sinônimo de Correção
-  Fiscal em `STATUS_MAP`, confirmar com a usuária se não for o caso).
+  **Correção Super** (situação própria, não é sinônimo de Correção Fiscal —
+  ver "Correção Super e checklist da supervisão" abaixo).
   `STATUS_MAP` em `converter_os.py` usa chaves SEM acento (compara contra
   `_norm()`, que sempre tira acento) — **cuidado**: a 1ª versão tinha
   chaves acentuadas e metade dos status vazava em maiúsculo pro frontend.
@@ -165,14 +165,35 @@ seguir o mesmo padrão.
 Vocabulário vem do campo `STATUS` do banco (`BD_OSP`), mapeado em
 `STATUS_MAP` (converter_os.py) pro Título Capitalizado de sempre: `Em
 elaboração`, `Em andamento`, `Concluída`, `Justificada`, `Cancelada`,
-`Correção Fiscal` (inclui "Correção Super", só Região 13, tratada como
-sinônimo), `Análise Gestor`, `Liberada`, `Para Emissão` (as 2 últimas
-novas desde a migração pro banco, "Fonte de dados" acima). Cores em
+`Correção Fiscal`, `Análise Gestor`, `Liberada`, `Para Emissão`, `Correção
+Super` (as 3 últimas novas desde a migração pro banco, "Fonte de dados" acima). Cores em
 `CORES_SITUACAO`, ícones em `ICONES_SITUACAO`, combinados em
 `rotuloComIcone()` pra exibição em pills/badges/legenda.
 
 Valor cru `"0"` ou vazio vira `"Não informada"` — status espúrio visto na
 Região 14, provavelmente erro de digitação na fonte, não uma situação real.
+
+## Correção Super e checklist da supervisão (`checklist`)
+
+"Correção Super" é uma situação PRÓPRIA (cor/ícone próprios, filtrável): a
+supervisora devolveu a O.S.P. pra correção antes de emitir (explicação da
+usuária em 2026-10-02). **Erro meu anterior**: tratei como sinônimo de
+"Correção Fiscal" por só aparecer na Região 13 — estava errado.
+
+O checklist que a equipe demorava a abrir (aba `CHECKLIST_OSP` do "Sistema
+de Gestão OSP – AGETO_V*.xlsm") agora aparece na gaveta de detalhe, com o selo
+"📋 N" na lista quando há itens em NÃO. Formato no banco (`BD_CHECK_OSP` de
+cada `BD_LOTE_XX.xlsx`): cabeçalho da linha 1 = nº da O.S.P. (1 coluna por
+O.S.P.), a partir da linha 10 cada linha é um item, célula `SIM|NÃO|NA|obs`
+(`X|||` = sim, `|X||texto` = não com observação, `||X|` = n.a., `|||` = vazio).
+O TEXTO dos itens não está no banco: vem da aba `CHECKLIST_OSP` do sistema
+principal, **linha N dessa aba = linha N-3 de `BD_CHECK_OSP`** (conferido
+contra o checklist real da O.S.P. 051.2024.0163). `carregar_catalogo_checklist()`
+lê o sistema principal (~8 MB, 1x por rodada) e guarda cópia em
+`dados/checklist_itens.json` — se o Drive/arquivo não estiver acessível usa a
+cópia. Só vão pro `props.checklist` as pendências (NÃO) e as observações
+(SIM/N.A. com comentário), não o checklist inteiro. 180 das 332 O.S.P. têm
+checklist hoje.
 
 ## Prazo e atraso (`atrasada`, `prazo_limite`, `prazo_meses`)
 
