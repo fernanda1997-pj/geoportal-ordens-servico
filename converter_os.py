@@ -528,6 +528,47 @@ def carregar_checklists(wb):
 
 
 # ---------------------------------------------------------------------
+# O.S.P. CRIADAS MAS AINDA SEM EMISSÃO — têm levantamento/inventário
+# (BD_INVENTARIO) mas não foram lançadas em BD_OSP. Só os arquivos existem:
+# sem valor, data nem situação. Regras (investigadas em 2026-10-02):
+#  - O nº real da O.S.P. vem do NOME do arquivo quando tem o padrão
+#    "042.2025.0004" — o índice às vezes registra o nº errado (Região 22
+#    listava a O.S.P. 0004 como "1"; como a 4 já está em BD_OSP, não é nova).
+#  - Só entra número DEPOIS do primeiro cadastrado do contrato: a Região 02
+#    começa na 106, e o inventário cita 2, 3, 88, 102, 104 (numeração de
+#    antes, de contrato anterior) — esses ficam de fora e vão pro relatório.
+# ---------------------------------------------------------------------
+def carregar_inventario(wb):
+    if 'BD_INVENTARIO' not in wb.sheetnames:
+        return {}
+    ws = wb['BD_INVENTARIO']
+    por_osp = {}
+    for r in range(1, ws.max_row + 1):
+        chave = _int_seguro(ws.cell(row=r, column=1).value)
+        nome = ws.cell(row=r, column=2).value
+        if chave is None or not nome:
+            continue
+        nome = str(nome).strip()
+        m = re.search(r'\d{3,4}\.\d{4}\.(\d{4})', nome)
+        arquivos = por_osp.setdefault(int(m.group(1)) if m else chave, [])
+        if nome not in arquivos:
+            arquivos.append(nome)
+    return por_osp
+
+
+def carregar_nomes_trechos(wb):
+    """{nº do trecho: nome} da aba TRECHOS (colunas D e E, uma linha por S.R.E.)."""
+    nomes = {}
+    if 'TRECHOS' in wb.sheetnames:
+        ws = wb['TRECHOS']
+        for r in range(2, ws.max_row + 1):
+            n = _int_seguro(ws.cell(row=r, column=4).value)
+            if n is not None and n not in nomes:
+                nomes[n] = str(ws.cell(row=r, column=5).value or '').strip()
+    return nomes
+
+
+# ---------------------------------------------------------------------
 # BD_OSP — uma linha por O.S.P.+trecho. Fonte principal: data de emissão,
 # trecho, situação, valor previsto/executado.
 # ---------------------------------------------------------------------
@@ -560,11 +601,13 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
     regiao_geo_label = f'R{regiao_geo}'
 
     n_lidos = n_pulados_sem_trecho = n_sem_geometria = 0
+    osps_cadastradas = set()
 
     for r in range(2, ws.max_row + 1):
         osp = _int_seguro(ws.cell(row=r, column=cols['BD_OSP']).value)
         if osp is None:
             continue
+        osps_cadastradas.add(osp)
 
         trecho_num = _int_seguro(ws.cell(row=r, column=cols['TRECHO_N']).value)
         trecho_nome = ws.cell(row=r, column=cols['DESCRICAO']).value
@@ -640,8 +683,43 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
             alvo.append({'type': 'Feature', 'geometry': None, 'properties': props})
         n_lidos += 1
 
+    # O.S.P. criadas mas ainda sem emissão (só têm levantamento/inventário).
+    n_sem_emissao = 0
+    inventario = carregar_inventario(wb)
+    nomes_trechos = carregar_nomes_trechos(wb)
+    primeira = min(osps_cadastradas) if osps_cadastradas else None
+    for osp in sorted(inventario):
+        if osp in osps_cadastradas or primeira is None:
+            continue
+        arquivos = inventario[osp]
+        if osp < primeira:
+            qa(f'{contrato} (R{regiao_num_planilha:02d}): O.S.P. {osp} tem levantamento/inventário mas o número é anterior '
+               f'ao 1º cadastrado do contrato ({primeira}) — ignorada (provável numeração de contrato anterior)')
+            continue
+        trecho_num = next((int(m.group(1)) for a in arquivos
+                           for m in [re.search(r'TRECHO\s*-?\s*(\d+)', a, re.I)] if m), None)
+        geoms = carregar_trechos_regiao(regiao_geo).get(trecho_num) if trecho_num else None
+        props = {
+            'regiao': regiao_geo_label, 'regiao_os': f'R{regiao_num_planilha:02d}', 'tipo_servico': tipo_servico,
+            'contrato': contrato, 'osp': osp, 'data_emissao': None, 'cronograma': '', 'meses_cronograma': [],
+            'trecho_num': trecho_num, 'trecho_nome': nomes_trechos.get(trecho_num) if trecho_num else None,
+            'servico': servicos_por_osp.get(osp), 'valor_previsto': 0, 'situacao': 'Sem emissão',
+            'observacao': None, 'valor_executado': 0, 'saldo': 0, 'pct_executado': None,
+            'situacao_final': 'Sem emissão', 'medido_mensal': montar_medido_mensal([]),
+            'prazo_meses': None, 'prazo_limite': None, 'atrasada': None,
+            'checklist': checklists_por_osp.get(osp),
+            'sem_emissao': True, 'inventario': arquivos,
+        }
+        alvo = resultados_por_regiao.setdefault(regiao_geo_label, [])
+        if geoms:
+            for geom in geoms:
+                alvo.append({'type': 'Feature', 'geometry': mapping(geom), 'properties': props})
+        else:
+            alvo.append({'type': 'Feature', 'geometry': None, 'properties': props})
+        n_sem_emissao += 1
+
     print(f'  {os.path.basename(caminho)}: {n_lidos} O.S.P. lida(s), {n_pulados_sem_trecho} sem trecho cadastrado ainda, '
-          f'{n_sem_geometria} sem geometria no shapefile')
+          f'{n_sem_geometria} sem geometria no shapefile, {n_sem_emissao} criada(s) sem emissão')
 
 
 def pastas_do_lote(numero):

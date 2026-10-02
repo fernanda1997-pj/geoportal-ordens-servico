@@ -195,6 +195,23 @@ cópia. Só vão pro `props.checklist` as pendências (NÃO) e as observações
 (SIM/N.A. com comentário), não o checklist inteiro. 180 das 332 O.S.P. têm
 checklist hoje.
 
+## O.S.P. criadas mas sem emissão (`sem_emissao`, situação "Sem emissão")
+
+Existem O.S.P. com levantamento/inventário (`BD_INVENTARIO`) que ainda não
+foram lançadas em `BD_OSP` — só existem os arquivos, sem valor/data/situação.
+`carregar_inventario()` + bloco no fim de `processar_banco()` geram uma
+feature por O.S.P. dessas, com `sem_emissao: true` e `inventario: [arquivos]`
+(a gaveta lista os nomes). Regras, investigadas em 2026-10-02:
+- O nº real vem do NOME do arquivo quando tem o padrão `042.2025.0004` — o
+  índice às vezes registra o nº errado (Região 22 listava a 0004 como "1").
+- Só entra número DEPOIS do 1º cadastrado do contrato. A Região 02 começa na
+  106 e o inventário cita 2, 3, 88, 102, 104 (numeração de antes) — ficam de
+  fora e vão pro `relatorio_qualidade_os.txt`. Se a usuária disser que são
+  O.S.P. de verdade, tirar essa trava.
+- Trecho vem do nome do arquivo (`TRECHO 245`); sem isso, a O.S.P. entra sem
+  geometria. Hoje entram 2: Região 13 nº 164 e Região 03 Lucena nº 25.
+Contam em "emitidas"/"pendentes" como as "Em elaboração" já contavam.
+
 ## Prazo e atraso (`atrasada`, `prazo_limite`, `prazo_meses`)
 
 `PRAZO` (BD_OSP) é em **meses**, não dias (confirmado contra a distribuição

@@ -495,6 +495,8 @@ var CORES_SITUACAO = {
   // Supervisão devolveu a O.S.P. pra correção antes de emitir — cor própria
   // (não é a mesma de Correção Fiscal, que é outra etapa).
   'Correção Super': '#EA580C',
+  // Criada no sistema (tem levantamento/inventário) mas ainda não emitida.
+  'Sem emissão': '#A78BFA',
 };
 function corSituacao(s){ return CORES_SITUACAO[s] || '#94A3B8'; }
 // "-" na planilha não é uma situação de verdade (não está na lista oficial
@@ -507,7 +509,7 @@ var ICONES_SITUACAO = {
   'Concluída': '✅', 'Em andamento': '🔧', 'Em elaboração': '✏️',
   'Justificada': '📄', 'Cancelada': '🚫', 'Correção Fiscal': '💲',
   'Análise Gestor': '🔎', '-': '❔', 'Não informada': '❔',
-  'Liberada': '🔓', 'Para Emissão': '🆕', 'Correção Super': '🛠️',
+  'Liberada': '🔓', 'Para Emissão': '🆕', 'Correção Super': '🛠️', 'Sem emissão': '📝',
 };
 function iconeSituacao(s){ return ICONES_SITUACAO[s] || ''; }
 // Ícone + rótulo prontos pra jogar dentro de um badge/pill.
@@ -1499,6 +1501,8 @@ function blocoOS(props, semGeometria){
       '<div class="linha"><span class="rot">Tipo</span><span class="val">'+(props.tipo_servico === 'restauracao' ? 'Restauração' : 'Manutenção')+' ('+props.regiao_os+')</span></div>'+
       '<div class="total"><span>Valor previsto</span><b>'+fmtReais(props.valor_previsto)+'</b></div>'+
       (props.observacao ? '<div style="margin-top:6px; font-size:11px; color:#78350F;">'+props.observacao+'</div>' : '')+
+      (props.sem_emissao ? '<div style="margin-top:8px; font-size:11.5px; color:#5B21B6;">📝 Criada no sistema, <b>ainda sem emissão</b> — só existem levantamento/inventário (sem valor, data nem situação lançados).'+
+        '<ul style="padding-left:18px;margin:4px 0;color:#334155;">'+(props.inventario||[]).map(function(a){ return '<li>'+escaparHtml(a)+'</li>'; }).join('')+'</ul></div>' : '')+
       blocoChecklist(props.checklist)+
       (semGeometria ? '<div style="margin-top:6px; font-size:11px; color:#78350F;">📍 Sem geometria de trecho cadastrada — entra nos totais/KPIs, mas não é possível desenhar no mapa.</div>' : '')+
     '</div>'
