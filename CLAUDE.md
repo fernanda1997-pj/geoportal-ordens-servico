@@ -343,3 +343,5 @@ O drawer de detalhe mostra o bloco "📏 Medições" (`blocoMedicoes()` em `inde
 - Propriedade `medicoes` = lista de `{n, mes, periodo, valor, status, docs, justificativa}` (montada por `montar_medicoes()` no `converter_os.py`).
 - Os PDFs ficam no Drive; o geoportal só mostra os NOMES/tipos dos documentos (chips), sem link.
 - Os nomes de arquivo são bagunçados ("MEMORIA", "MEMORIAL DE CALCULO", "RELATORIO OSP 091", prefixo `INSP_CONSOL_`...), então `rotulo_doc_boletim()` classifica por palavra-chave (`REGRAS_DOC_BOLETIM`, a ordem importa). Nome sem sufixo vira "Boletim de medição".
+- **Copiar nome do arquivo:** cada documento da medição é `{tipo, arquivo}`; o chip (`.chip-doc`) copia o nome completo do PDF pra colar na busca do Drive.
+- **Medições por mês:** botão "📏 Medições por mês" na lateral abre um modal (`#medmes-overlay`) com seletor de mês (`m.mes`, formato "Março/2026"), filtro de texto (O.S.P., rodovia, contrato/empresa, situação), total do mês e lista ordenada por valor; clicar numa linha abre a O.S.P. (`abrirOS`). Ignora os filtros da lateral de propósito.
