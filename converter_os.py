@@ -476,6 +476,11 @@ def rotulo_doc_boletim(tipo_bruto):
     return tipo_bruto.strip().capitalize()
 
 
+def tipo_do_boletim(nome):
+    sufixo = re.search(r'MEDI[ÇC][ÃA]O[^_]*_(.+?)(?:\.pdf)?$', str(nome).strip(), flags=re.I)
+    return rotulo_doc_boletim(sufixo.group(1) if sufixo else '')
+
+
 def carregar_boletins(wb, pasta_pdf=None):
     """{osp: {nº da medição: [{tipo, arquivo}, ...]}} — tipo = trecho final
     do nome do arquivo ("BOLETIM_OSP_0078_MED_11ª MEDIÇÃO_MEMORIA DE CALCULO.pdf"
@@ -503,9 +508,7 @@ def carregar_boletins(wb, pasta_pdf=None):
         # CALCULO.pdf"); boletim sem sufixo (só "..._13ª MEDIÇÃO.pdf") vira
         # "Boletim de medição". Os nomes dos arquivos vêm SEM acento, por
         # isso o rótulo passa por rotulo_doc_boletim().
-        sufixo = re.search(r'MEDI[ÇC][ÃA]O[^_]*_(.+?)(?:\.pdf)?$', str(nome).strip(), flags=re.I)
-        tipo_bruto = sufixo.group(1) if sufixo else ''
-        tipo = rotulo_doc_boletim(tipo_bruto)
+        tipo = tipo_do_boletim(nome)
         arquivo = str(nome).strip()
         real = no_drive.get(_norm(arquivo))
         docs = por_osp.setdefault(osp, {}).setdefault(int(m.group(1)), [])
@@ -513,6 +516,19 @@ def carregar_boletins(wb, pasta_pdf=None):
             # 'no_drive' = o PDF existe mesmo no Drive (nome real, com acentos);
             # senão fica o nome da planilha e o geoportal não oferece abrir.
             docs.append({'tipo': tipo, 'arquivo': real or arquivo, 'no_drive': bool(real)})
+    # BD_BOLETIM nem sempre está preenchida (ex.: LOTE 16 tem os PDFs na pasta e
+    # a aba vazia) — então também lê os nomes direto da pasta do Drive
+    # ("BOLETIM_OSP_0005_MED_6ª MEDIÇÃO PARCIAL_....pdf"). INSP_CONSOL_* não tem
+    # nº de O.S.P. no nome, só entra se a planilha listar.
+    for real in no_drive.values():
+        if not real.lower().endswith('.pdf'):
+            continue
+        m = re.search(r'OSP_(\d+)_MED_(\d+)', real)
+        if not m:
+            continue
+        docs = por_osp.setdefault(int(m.group(1)), {}).setdefault(int(m.group(2)), [])
+        if all(d['arquivo'] != real for d in docs):
+            docs.append({'tipo': tipo_do_boletim(real), 'arquivo': real, 'no_drive': True})
     return por_osp
 
 
