@@ -315,6 +315,19 @@ a.chip-doc{text-decoration:none;}
 .mm-linha:hover{background:#F1F5F9;}
 .mm-linha small{display:block; color:var(--cinza); font-size:10.5px; margin-top:1px;}
 .mm-linha .mm-valor{white-space:nowrap; text-align:right;}
+
+/* ---------- Medição consolidada (valor do contrato x soma das O.S.P.) ---------- */
+.mm-consol{border:1px solid var(--borda); border-radius:8px; padding:8px 10px; margin:6px 0; background:#F8FAFC; font-size:12px;}
+.mm-consol-topo{display:flex; justify-content:space-between; gap:8px; align-items:center; margin-bottom:6px;}
+.mm-consol-grade{display:grid; grid-template-columns:repeat(4, 1fr); gap:6px;}
+.mm-consol-grade div{background:#fff; border:1px solid var(--borda); border-radius:6px; padding:4px 6px;}
+.mm-consol-grade small{display:block; color:var(--cinza); font-size:10px;}
+.mm-consol-grade b{font-size:12px;}
+.mm-consol-res{margin-top:6px; font-size:11.5px;}
+.mm-consol-titulo{font-size:12px; font-weight:700; color:var(--azul); margin:10px 0 2px;}
+.consol-ok{color:#15803D; font-weight:700;}
+.consol-erro{color:#B91C1C; font-weight:700;}
+@media (max-width:520px){ .mm-consol-grade{grid-template-columns:repeat(2, 1fr);} }
 </style>
 </head>
 <body>
@@ -653,7 +666,7 @@ function renderizarCamadaGeral(entradas, porChave){
 // trecho), por isso agrupamos por chave antes de listar/contar.
 // ---------------------------------------------------------------------
 function carregarTodosOsRegiao(callback){
-  var pendentes = MANIFEST_OS.filter(function(r){ return !arquivosOsCarregados[r]; });
+  var pendentes = MANIFEST_OS.concat(['_consolidada']).filter(function(r){ return !arquivosOsCarregados[r]; });
   if(pendentes.length === 0){ callback(); return; }
   var restantes = pendentes.length;
   pendentes.forEach(function(regiao){
@@ -662,8 +675,10 @@ function carregarTodosOsRegiao(callback){
     // servidor — sem isso, dados atualizados (planilha nova, correção de
     // ano etc.) podiam ficar presos no cache do navegador sem a usuária
     // perceber, já que o nome do arquivo não muda quando o conteúdo muda.
-    s.src = 'dados/os_' + regiao + '.js?v=' + Date.now();
-    s.onload = function(){ arquivosOsCarregados[regiao] = true; if(--restantes === 0) callback(); };
+    s.src = (regiao === '_consolidada' ? 'dados/consolidada.js' : 'dados/os_' + regiao + '.js') + '?v=' + Date.now();
+    var feito = function(){ arquivosOsCarregados[regiao] = true; if(--restantes === 0) callback(); };
+    s.onload = feito;
+    if(regiao === '_consolidada') s.onerror = feito; // sem o arquivo, o resto do geoportal continua funcionando
     document.body.appendChild(s);
   });
 }
@@ -1546,7 +1561,65 @@ function blocoLevantamento(docs){
     '<div style="margin-top:4px;font-size:10.5px;color:#334155;">'+docs.map(chipDoc).join('')+'</div></div>';
 }
 
-function blocoMedicoes(medicoes, valorPrevisto){
+// ---------------------------------------------------------------------
+// Medição CONSOLIDADA do contrato (dados/consolidada.js, vem de BD_STATUSCONS).
+// Confere: consolidada == soma das O.S.P. do mês + administração local (item
+// 9.1.1, cobrado por mês e que não pertence a nenhuma O.S.P.). O status
+// (Aprovada, Em análise...) é o REGISTRADO no sistema; o "confere" é à parte.
+// ---------------------------------------------------------------------
+var COR_STATUS_CONSOL = {'Aprovada':'#15803D', 'Em análise':'#B45309', 'Correção':'#B91C1C', 'Ger. de medição':'#1D4ED8', 'Supervisora':'#7C3AED'};
+function consolidadaDe(contrato, n){
+  var lista = (window.CONSOLIDADA_OS || {})[contrato] || [];
+  for(var i = 0; i < lista.length; i++){ if(lista[i].n === n) return lista[i]; }
+  return null;
+}
+function fmtDifReais(v){ return Math.abs(v) < 0.005 ? fmtReais(0) : (v < 0 ? '− ' : '+ ') + fmtReais(Math.abs(v)); }
+function seloStatusConsol(st){
+  if(!st) return '';
+  return '<span style="background:'+(COR_STATUS_CONSOL[st] || '#64748B')+';color:#fff;border-radius:10px;padding:1px 8px;font-size:10.5px;font-weight:600;white-space:nowrap;">'+escaparHtml(st)+'</span>';
+}
+function resultadoConsol(c){
+  var base = 'O.S.P.'+(c.adm_local ? ' + administração local' : '');
+  if(c.confere) return '<span class="consol-ok">✅ Confere</span> <span style="color:var(--cinza);">consolidada = '+base+'</span>';
+  return '<span class="consol-erro">⚠️ Não confere</span> a consolidada está <b>'+fmtReais(Math.abs(c.dif))+'</b> '+
+    (c.dif > 0 ? 'acima' : 'abaixo')+' do que as '+base+' somam';
+}
+function cardConsolidada(contrato, c){
+  var docs = (c.docs || []).map(chipDoc).join('');
+  return '<div class="mm-consol">'+
+    '<div class="mm-consol-topo"><span><b>'+escaparHtml(rotuloContrato(contrato))+'</b> · '+c.n+'ª medição consolidada</span>'+seloStatusConsol(c.status)+'</div>'+
+    '<div class="mm-consol-grade">'+
+      '<div><small>Consolidada</small><b>'+fmtReais(c.valor)+'</b></div>'+
+      '<div><small>O.S.P. ('+c.n_osp+')</small><b>'+fmtReais(c.soma_osp)+'</b></div>'+
+      '<div><small>Adm. local</small><b>'+fmtReais(c.adm_local)+'</b></div>'+
+      '<div><small>Diferença</small><b>'+fmtDifReais(c.dif)+'</b></div>'+
+    '</div>'+
+    '<div class="mm-consol-res">'+resultadoConsol(c)+'</div>'+
+    (docs ? '<div style="margin-top:4px;font-size:10.5px;color:#334155;">'+docs+'</div>' : '')+
+  '</div>';
+}
+// Cartões da consolidada do mês (respeita o filtro de região da janela).
+function cardsConsolidadaMes(mes, regiao){
+  var dados = window.CONSOLIDADA_OS || {};
+  var regDoContrato = {};
+  todasFeaturesOS().forEach(function(f){ regDoContrato[f.properties.contrato] = f.properties.regiao_os; });
+  var html = '';
+  Object.keys(dados).sort().forEach(function(contrato){
+    if(regiao && regDoContrato[contrato] !== regiao) return;
+    dados[contrato].forEach(function(c){ if(c.mes === mes) html += cardConsolidada(contrato, c); });
+  });
+  return html ? '<div class="mm-consol-titulo">📑 Medição consolidada do mês</div>'+html+
+    '<div class="mm-consol-titulo">📏 Medições por O.S.P.</div>' : '';
+}
+
+function linhaConsolidada(contrato, n){
+  var c = contrato ? consolidadaDe(contrato, n) : null;
+  if(!c) return '';
+  return '<div style="margin-top:3px;font-size:10.5px;color:#334155;">📑 Consolidada do contrato (todas as O.S.P. do mês): <b>'+fmtReais(c.valor)+'</b> '+seloStatusConsol(c.status)+' · '+
+    (c.confere ? '<span class="consol-ok">✅ confere</span>' : '<span class="consol-erro">⚠️ não confere ('+fmtDifReais(c.dif)+')</span>')+'</div>';
+}
+
+function blocoMedicoes(medicoes, valorPrevisto, contrato){
   if(!medicoes || !medicoes.length) return '';
   var total = medicoes.reduce(function(s, m){ return s + (m.valor || 0); }, 0);
   var pct = valorPrevisto > 0 ? ' ('+(total / valorPrevisto * 100).toFixed(1).replace('.', ',')+'% do previsto)' : '';
@@ -1559,6 +1632,7 @@ function blocoMedicoes(medicoes, valorPrevisto){
       '<div style="color:var(--cinza);font-size:10.5px;margin-top:1px;">'+
         (m.periodo ? escaparHtml(m.periodo) : '')+
         (m.status ? ' · <span style="color:'+corSituacao(m.status)+';font-weight:600;">'+escaparHtml(m.status)+'</span>' : '')+'</div>'+
+      linhaConsolidada(contrato, m.n)+
       (docs ? '<div style="margin-top:3px;font-size:10.5px;color:#334155;">'+docs+'</div>' : '')+
       (m.justificativa ? '<details style="margin-top:3px;"><summary style="cursor:pointer;color:var(--cinza);font-size:10.5px;">Justificativa</summary>'+
         '<div style="font-size:11px;margin-top:3px;white-space:pre-line;">'+escaparHtml(m.justificativa)+'</div></details>' : '')+
@@ -1609,7 +1683,7 @@ function renderMedicoesMes(){
   document.getElementById('medmes-resumo').innerHTML = linhas.length
     ? '<b>'+linhas.length+(linhas.length > 1 ? ' medições' : ' medição')+'</b> em '+escaparHtml(mes)+' · total <b>'+fmtReais(total)+'</b>'
     : 'Nenhuma medição encontrada em '+escaparHtml(mes)+'.';
-  document.getElementById('medmes-lista').innerHTML = linhas.map(function(l, idx){
+  document.getElementById('medmes-lista').innerHTML = cardsConsolidadaMes(mes, regiao) + linhas.map(function(l, idx){
     var p = l.entrada.props, m = l.med;
     return '<div class="mm-linha" data-idx="'+idx+'">'+
       '<div><b>O.S.P. '+p.osp+'</b> · '+escaparHtml(rodoviaCurta(p.trecho_nome || ''))+
@@ -1676,7 +1750,7 @@ function blocoOS(props, semGeometria){
       (props.sem_emissao ? '<div style="margin-top:8px; font-size:11.5px; color:#5B21B6;">📝 Criada no sistema, <b>ainda sem emissão</b> — só existem levantamento/inventário (sem valor, data nem situação lançados).'+
         ((props.levantamento && props.levantamento.length) ? '</div>' : '<ul style="padding-left:18px;margin:4px 0;color:#334155;">'+(props.inventario||[]).map(function(a){ return '<li>'+escaparHtml(a)+'</li>'; }).join('')+'</ul></div>') : '')+
       blocoLevantamento(props.levantamento)+
-      blocoMedicoes(props.medicoes, props.valor_previsto)+
+      blocoMedicoes(props.medicoes, props.valor_previsto, props.contrato)+
       blocoChecklist(props.checklist)+
       (semGeometria ? '<div style="margin-top:6px; font-size:11px; color:#78350F;">📍 Sem geometria de trecho cadastrada — entra nos totais/KPIs, mas não é possível desenhar no mapa.</div>' : '')+
     '</div>'

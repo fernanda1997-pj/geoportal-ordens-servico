@@ -680,6 +680,137 @@ def carregar_checklists(wb):
 #    começa na 106, e o inventário cita 2, 3, 88, 102, 104 (numeração de
 #    antes, de contrato anterior) — esses ficam de fora e vão pro relatório.
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# MEDIÇÃO CONSOLIDADA do contrato/lote (BD_STATUSCONS + PDFs de
+# INSP_PDF_CONSOLIDADO). É a medição que o órgão aprova: soma TODAS as O.S.P.
+# do mês MAIS a "Administração Local" (item 9.1.1 do orçamento, cobrado por mês
+# e que não pertence a nenhuma O.S.P.). Conferido nos bancos: a diferença entre
+# a consolidada e a soma das O.S.P. é exatamente quantidade x valor unitário do
+# 9.1.1 (ex.: Lote 13 = R$ 144.669,28/mês). Por isso a conferência é
+#     consolidada  ==  soma das O.S.P.  +  administração local   (tolerância R$ 1)
+# O status (Aprovada, Em análise...) é o REGISTRADO no sistema — o geoportal não
+# "aprova" nada por conta própria; mostra o status e, ao lado, se os valores batem.
+# ---------------------------------------------------------------------
+CONSOLIDADA = {}  # {contrato: [medição consolidada, ...]} -> dados/consolidada.js
+TOLERANCIA_CONSOLIDADA = 1.00
+STATUS_CONSOLIDADA = {
+    'APROVADA': 'Aprovada', 'EM ANALISE': 'Em análise', 'CORRECAO': 'Correção',
+    'GER. DE MEDICAO': 'Ger. de medição', 'SUPERVISORA': 'Supervisora',
+}
+
+
+def _valor_unitario_item(wb, subitem):
+    if 'ORCAMENTO_PADRAO' not in wb.sheetnames:
+        return None
+    ws = wb['ORCAMENTO_PADRAO']
+    col_sub = col_val = None
+    for k in range(1, ws.max_column + 1):
+        cab = _norm(ws.cell(row=1, column=k).value)
+        if cab == 'SUBITEM':
+            col_sub = k
+        elif cab.startswith('VALOR UNIT'):
+            col_val = k
+    if not (col_sub and col_val):
+        return None
+    for r in range(2, ws.max_row + 1):
+        if str(ws.cell(row=r, column=col_sub).value).strip() == subitem:
+            return _float_br(ws.cell(row=r, column=col_val).value)
+    return None
+
+
+def _quantidades_item(wb, subitem):
+    """{nº da medição: quantidade lançada do item} em BD_MEDI_CONS."""
+    if 'BD_MEDI_CONS' not in wb.sheetnames:
+        return {}
+    ws = wb['BD_MEDI_CONS']
+    colunas = {}
+    for k in range(2, ws.max_column + 1):
+        n = _int_seguro(ws.cell(row=1, column=k).value)
+        if n is not None:
+            colunas[n] = k
+    for r in range(2, ws.max_row + 1):
+        if str(ws.cell(row=r, column=1).value).strip() == subitem:
+            return {n: (_float_br(ws.cell(row=r, column=k).value) or 0) for n, k in colunas.items()}
+    return {}
+
+
+def rotulo_consolidada(sufixo):
+    t = _norm(sufixo)
+    parte = re.search(r'\bP(?:ARTE)?\s*0?(\d)\b', t)
+    if 'DIARIO' in t or 'RDO' in t:
+        return 'Diário de obras'
+    if 'INSPECAO' in t or 'SEMANAL' in t or 'RELATORIOS' in t:
+        return 'Relatório de inspeção'
+    if 'RELATORIO DE MEDICAO' in t:
+        return 'Relatório de medição'
+    if 'CONSOLID' in t or 'MEDICAO' in t or t.startswith('MED '):
+        r = 'Medição consolidada'
+        if 'ASSINAD' in t:
+            r += ' assinada'
+        if parte:
+            r += f' (parte {parte.group(1)})'
+        return r
+    return rotulo_doc_boletim(sufixo)
+
+
+def carregar_pdfs_consolidada(pasta):
+    """{nº da medição: [{tipo, arquivo, no_drive}]} de LOTE XX/INSP_PDF_CONSOLIDADO."""
+    por_n = {}
+    if not os.path.isdir(pasta):
+        return por_n
+    for f in sorted(os.listdir(pasta)):
+        if not f.lower().endswith('.pdf'):
+            continue
+        m = re.search(r'MED_(\d+)', f)
+        suf = re.search(r'MEDI[ÇC][ÃA]O[^_]*_(.+?)\.pdf$', f, flags=re.I)
+        if not m:
+            continue
+        docs = por_n.setdefault(int(m.group(1)), [])
+        docs.append({'tipo': rotulo_consolidada(suf.group(1) if suf else ''), 'arquivo': f, 'no_drive': True})
+    return por_n
+
+
+def carregar_consolidada(wb, pasta_lote):
+    if 'BD_STATUSCONS' not in wb.sheetnames:
+        return []
+    soma, osps = {}, {}
+    for osp, regs in carregar_medicoes(wb).items():
+        for reg in regs:
+            if reg['n'] is None:
+                continue
+            soma[reg['n']] = soma.get(reg['n'], 0.0) + reg['valor']
+            osps.setdefault(reg['n'], set()).add(osp)
+    unit_adm = _valor_unitario_item(wb, '9.1.1') or 0
+    qtd_adm = _quantidades_item(wb, '9.1.1')
+    pdfs = carregar_pdfs_consolidada(os.path.join(pasta_lote, 'INSP_PDF_CONSOLIDADO'))
+    ws = wb['BD_STATUSCONS']
+    itens = []
+    for r in range(1, ws.max_row + 1):
+        n = _int_seguro(ws.cell(row=r, column=1).value)
+        if n is None:
+            continue
+        mes_nome, ano = _parse_mes_ano(ws.cell(row=r, column=3).value)
+        if mes_nome is None:
+            continue
+        valor = _float_br(ws.cell(row=r, column=5).value) or 0
+        status_raw = str(ws.cell(row=r, column=6).value or '').strip()
+        soma_osp = soma.get(n, 0.0)
+        adm = (qtd_adm.get(n) or 0) * unit_adm
+        dif = valor - (soma_osp + adm)
+        periodo = ws.cell(row=r, column=4).value
+        itens.append({
+            'n': n, 'mes': f'{mes_nome}/{ano}',
+            'periodo': re.sub(r'\s+', ' ', str(periodo)).strip() if periodo else None,
+            'valor': round(valor, 2), 'soma_osp': round(soma_osp, 2), 'n_osp': len(osps.get(n, ())),
+            'adm_local': round(adm, 2), 'dif': round(dif, 2),
+            'confere': abs(dif) <= TOLERANCIA_CONSOLIDADA,
+            'status': STATUS_CONSOLIDADA.get(_norm(status_raw), status_raw.capitalize() or None),
+            'docs': pdfs.get(n, []),
+        })
+    itens.sort(key=lambda i: i['n'])
+    return itens
+
+
 def rotulo_levantamento(sufixo):
     t = _norm(sufixo)
     trecho = re.search(r'TRECHO\s*-?\s*(\d+)', t)
@@ -782,6 +913,7 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
     medicoes_por_osp = carregar_medicoes(wb)
     checklists_por_osp = carregar_checklists(wb)
     boletins_por_osp = carregar_boletins(wb, os.path.join(os.path.dirname(caminho), 'BOLETIM_PDF'))
+    CONSOLIDADA.setdefault(contrato, []).extend(carregar_consolidada(wb, os.path.dirname(caminho)))
     levantamentos_por_osp = carregar_levantamentos(os.path.join(os.path.dirname(caminho), 'INVENTARIOS_PDF'))
     justificativas_med = carregar_justificativas_med(wb)
 
@@ -973,6 +1105,19 @@ def main():
                         for f in feats))
         total_osp += n_osp
         print(f'  -> dados/{nome_arquivo} ({len(feats)} feature(s), {n_osp} O.S.P.+trecho)')
+
+    with open(os.path.join(DADOS_DIR, 'consolidada.js'), 'w', encoding='utf-8') as f:
+        f.write('// Gerado por converter_os.py — não editar à mão\n')
+        f.write('window.CONSOLIDADA_OS = ' + json.dumps(CONSOLIDADA, ensure_ascii=False) + ';\n')
+    n_cons = sum(len(v) for v in CONSOLIDADA.values())
+    n_div = sum(1 for v in CONSOLIDADA.values() for i in v if not i['confere'])
+    print(f'  -> dados/consolidada.js ({n_cons} medição(ões) consolidada(s), {n_div} que não conferem)')
+    for contrato, itens in sorted(CONSOLIDADA.items()):
+        for i in itens:
+            if not i['confere']:
+                qa(f"{contrato}: {i['n']}ª medição consolidada ({i['mes']}) não confere — consolidada "
+                   f"R$ {i['valor']:,.2f} x O.S.P. R$ {i['soma_osp']:,.2f} + adm. local R$ {i['adm_local']:,.2f} "
+                   f"(diferença R$ {i['dif']:,.2f})")
 
     with open(os.path.join(DADOS_DIR, 'manifest_os.js'), 'w', encoding='utf-8') as f:
         f.write('// Gerado por converter_os.py — não editar à mão\n')
