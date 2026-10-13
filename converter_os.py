@@ -241,6 +241,15 @@ def _cronograma_legado(meses_cronograma):
 _cache_trechos = {}
 
 
+# Trechos que o banco numera (TRECHO_N) de um jeito e o shapefile de outro: o
+# shapefile casa por "Id", mas o acesso ao aeródromo está lá com um Id que já é
+# de outro trecho (R1: ACESSO06 tem Id 37, igual ao da TO-415 Nazaré; no banco é
+# o trecho 274). Liga (região, nº do trecho no banco) -> SRE(s) do shapefile.
+TRECHO_PARA_SRE = {
+    (1, 274): ['ACESSO06'],  # Aeródromo de Araguatins (O.S.P. 110 e 117, contrato 040.2024)
+}
+
+
 def carregar_trechos_regiao(regiao_num):
     if regiao_num in _cache_trechos:
         return _cache_trechos[regiao_num]
@@ -267,6 +276,15 @@ def carregar_trechos_regiao(regiao_num):
         if row.geometry is None or row.geometry.is_empty:
             continue
         por_trecho.setdefault(n, []).append(row.geometry)
+    col_sre = next((c for c in gdf.columns if _norm(c) == 'SRE'), None)
+    if col_sre:
+        for (reg, n), sres in TRECHO_PARA_SRE.items():
+            if reg != regiao_num or n in por_trecho:
+                continue
+            geoms = [row.geometry for _, row in gdf.iterrows()
+                     if str(row[col_sre]).strip() in sres and row.geometry is not None and not row.geometry.is_empty]
+            if geoms:
+                por_trecho[n] = geoms
     _cache_trechos[regiao_num] = por_trecho
     return por_trecho
 

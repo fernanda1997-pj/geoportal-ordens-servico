@@ -357,3 +357,7 @@ Dar dois cliques em `atualizar.bat`: confere o Drive (G:), roda `converter_os.py
 - **Regra de conferência:** consolidada == soma das O.S.P. do mês + **Administração Local** (item 9.1.1 do `ORCAMENTO_PADRAO`, cobrado por mês, não pertence a nenhuma O.S.P.; = quantidade em `BD_MEDI_CONS` × valor unitário). Tolerância R$ 1,00. Conferido: 53 de 55 batem ao centavo (lotes de restauração não têm adm. local).
 - O **status** (Aprovada / Em análise / Correção / Ger. de medição / Supervisora) é o registrado no sistema; o geoportal NÃO aprova nada, só mostra "✅ Confere" ou "⚠️ Não confere (diferença)" ao lado. Divergências vão pro `relatorio_qualidade_os.txt`.
 - UI: cartões "📑 Medição consolidada do mês" no topo da janela "Medições por mês" (respeitam mês e região) e uma linha "Consolidada do contrato" em cada medição no detalhe da O.S.P.
+
+## Trechos numerados diferente no banco e no shapefile
+
+O conversor casa o `TRECHO_N` do banco com a coluna `Id` do shapefile. Quando o número do banco não existe (ou o Id do shape já é de outro trecho), `TRECHO_PARA_SRE` em `converter_os.py` liga (região, nº do banco) → SRE do shapefile. Hoje: `(1, 274)` → `ACESSO06` (acesso ao aeródromo de Araguatins; no shape tem Id 37, igual ao da TO-415). **Pendente:** os aeródromos de Arraias (280) e Dianópolis (279), R13, NÃO existem no `R13_TRECHOS.shp` — ficam sem geometria até serem desenhados.
