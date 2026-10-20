@@ -369,3 +369,7 @@ O conversor casa o `TRECHO_N` do banco com a coluna `Id` do shapefile. Quando o 
 - **As marcas NÃO são ligadas a O.S.P. específicas** (a ordem dos slots não está confirmada; no Lote 12 o R coincidiu com a O.S.P. 111 em ordem crescente, mas no Lote 3-Ética não bateu). Por isso o bloco "📝 Apontamentos da análise" fica só no cartão da consolidada, nunca no detalhe de uma O.S.P.
 - Medição sem checklist registrado mostra "Checklist da análise: não lançado". O BD guarda só as últimas 2–3 medições de cada lote.
 - Atenção ao escrever regex via script: `\b` em string normal vira caractere de controle (backspace) — usar `chr(92)` ou raw string.
+
+### Link direto para uma medição consolidada
+
+Cada cartão da consolidada tem o botão "🔗 Copiar link", que gera `.../?medicao=<contrato>-<nº>` (ex.: `?medicao=009.2025-18`). Ao abrir esse endereço, `abrirMedicaoPeloLink()` (no fim do carregamento) abre a janela "Medições por mês" já no mês e região da medição, mostrando **só aquele contrato** (faixa "Mostrando só ... · ver todos do mês"; mudar mês/região também sai do foco). Link inválido ou de medição inexistente é ignorado em silêncio. O link não depende do Drive: quem receber precisa só do endereço do geoportal.

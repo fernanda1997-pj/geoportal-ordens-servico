@@ -329,6 +329,11 @@ a.chip-doc{text-decoration:none;}
 .consol-erro{color:#B91C1C; font-weight:700;}
 .mm-apont{margin-top:8px; padding-top:6px; border-top:1px dashed var(--borda); font-size:11.5px;}
 .mm-apont-vazio{color:var(--cinza);}
+.btn-link-med{background:#fff; border:1px solid var(--borda); border-radius:6px; padding:1px 8px; font:inherit; font-size:10.5px; color:var(--azul); cursor:pointer; white-space:nowrap;}
+.btn-link-med:hover{background:#EFF6FF;}
+.btn-link-med.copiado{background:#BBF7D0; color:#166534; border-color:#86EFAC;}
+.mm-foco{background:#EFF6FF; border:1px solid #BFDBFE; border-radius:6px; padding:6px 10px; margin:6px 0; font-size:12px;}
+.mm-foco a{color:var(--azul); font-weight:600; cursor:pointer;}
 .mm-apont ul{margin:4px 0 0; padding-left:16px;}
 .mm-apont li{margin:2px 0; white-space:pre-line;}
 .mm-apont .rev{color:#B45309; font-weight:700;}
@@ -1608,7 +1613,9 @@ function blocoApontamentos(c){
 function cardConsolidada(contrato, c){
   var docs = (c.docs || []).map(chipDoc).join('');
   return '<div class="mm-consol">'+
-    '<div class="mm-consol-topo"><span><b>'+escaparHtml(rotuloContrato(contrato))+'</b> · '+c.n+'ª medição consolidada</span>'+seloStatusConsol(c.status)+'</div>'+
+    '<div class="mm-consol-topo"><span><b>'+escaparHtml(rotuloContrato(contrato))+'</b> · '+c.n+'ª medição consolidada</span>'+
+      '<span style="display:flex;gap:6px;align-items:center;">'+seloStatusConsol(c.status)+
+      '<button type="button" class="btn-link-med" data-contrato="'+escaparHtml(contrato)+'" data-n="'+c.n+'" title="Copiar o link desta medição consolidada (com os apontamentos) para enviar a alguém">🔗 Copiar link</button></span></div>'+
     '<div class="mm-consol-grade">'+
       '<div><small>Consolidada</small><b>'+fmtReais(c.valor)+'</b></div>'+
       '<div><small>O.S.P. ('+c.n_osp+')</small><b>'+fmtReais(c.soma_osp)+'</b></div>'+
@@ -1621,13 +1628,14 @@ function cardConsolidada(contrato, c){
   '</div>';
 }
 // Cartões da consolidada do mês (respeita o filtro de região da janela).
-function cardsConsolidadaMes(mes, regiao){
+function cardsConsolidadaMes(mes, regiao, foco){
   var dados = window.CONSOLIDADA_OS || {};
   var regDoContrato = {};
   todasFeaturesOS().forEach(function(f){ regDoContrato[f.properties.contrato] = f.properties.regiao_os; });
   var html = '';
   Object.keys(dados).sort().forEach(function(contrato){
     if(regiao && regDoContrato[contrato] !== regiao) return;
+    if(foco && contrato !== foco) return;
     dados[contrato].forEach(function(c){ if(c.mes === mes) html += cardConsolidada(contrato, c); });
   });
   return html ? '<div class="mm-consol-titulo">📑 Medição consolidada do mês</div>'+html+
@@ -1689,12 +1697,15 @@ function medicoesDoMes(mes){
   });
   return linhas;
 }
+var focoContratoMed = null; // contrato em destaque (vem do link ?medicao=contrato-nº)
 function renderMedicoesMes(){
   var mes = document.getElementById('medmes-sel-mes').value;
   var busca = _semAcento(document.getElementById('medmes-busca').value.trim());
   var regiao = document.getElementById('medmes-sel-regiao').value;
+  var foco = focoContratoMed;
   var linhas = medicoesDoMes(mes).filter(function(l){
     if(regiao && l.entrada.props.regiao_os !== regiao) return false;
+    if(foco && l.entrada.props.contrato !== foco) return false;
     if(!busca) return true;
     var p = l.entrada.props;
     var alvo = _semAcento([p.osp, p.contrato, p.contrato+'.'+String(p.osp).padStart(4,'0'), rotuloContrato(p.contrato), p.trecho_nome, l.med.status, p.servico].join(' '));
@@ -1705,7 +1716,8 @@ function renderMedicoesMes(){
   document.getElementById('medmes-resumo').innerHTML = linhas.length
     ? '<b>'+linhas.length+(linhas.length > 1 ? ' medições' : ' medição')+'</b> em '+escaparHtml(mes)+' · total <b>'+fmtReais(total)+'</b>'
     : 'Nenhuma medição encontrada em '+escaparHtml(mes)+'.';
-  document.getElementById('medmes-lista').innerHTML = cardsConsolidadaMes(mes, regiao) + linhas.map(function(l, idx){
+  document.getElementById('medmes-lista').innerHTML = (foco ? '<div class="mm-foco">🔗 Mostrando só <b>'+escaparHtml(rotuloContrato(foco))+'</b> em '+escaparHtml(mes)+' · <a data-acao="ver-todos">ver todos do mês</a></div>' : '')+
+    cardsConsolidadaMes(mes, regiao, foco) + linhas.map(function(l, idx){
     var p = l.entrada.props, m = l.med;
     return '<div class="mm-linha" data-idx="'+idx+'">'+
       '<div><b>O.S.P. '+p.osp+'</b> · '+escaparHtml(rodoviaCurta(p.trecho_nome || ''))+
@@ -1717,7 +1729,7 @@ function renderMedicoesMes(){
   document.getElementById('medmes-lista')._linhas = linhas;
 }
 function _semAcento(t){ return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
-document.getElementById('btn-medicoes-mes').addEventListener('click', function(){
+function abrirJanelaMedicoes(mesPreferido, regiaoPreferida){
   var meses = {};
   todasFeaturesOS().forEach(function(f){ (f.properties.medicoes || []).forEach(function(m){ meses[m.mes] = true; }); });
   var regioes = {};
@@ -1727,17 +1739,23 @@ document.getElementById('btn-medicoes-mes').addEventListener('click', function()
   var listaReg = Object.keys(regioes).sort();
   selReg.innerHTML = '<option value="">Todas as regiões</option>'+listaReg.map(function(r){
     return '<option value="'+escaparHtml(r)+'">'+escaparHtml(rotuloRegiao(r))+'</option>'; }).join('');
-  selReg.value = listaReg.indexOf(regAtual) !== -1 ? regAtual : '';
+  selReg.value = regiaoPreferida && listaReg.indexOf(regiaoPreferida) !== -1 ? regiaoPreferida : (listaReg.indexOf(regAtual) !== -1 ? regAtual : '');
   var lista = ordenarMesesEmissao(Object.keys(meses));
   var sel = document.getElementById('medmes-sel-mes');
   var atual = sel.value;
   sel.innerHTML = lista.map(function(m){ return '<option value="'+escaparHtml(m)+'">'+escaparHtml(m)+'</option>'; }).join('');
-  sel.value = lista.indexOf(atual) !== -1 ? atual : lista[lista.length - 1];
+  sel.value = mesPreferido && lista.indexOf(mesPreferido) !== -1 ? mesPreferido : (lista.indexOf(atual) !== -1 ? atual : lista[lista.length - 1]);
   document.getElementById('medmes-overlay').classList.add('aberto');
   renderMedicoesMes();
+}
+document.getElementById('btn-medicoes-mes').addEventListener('click', function(){
+  focoContratoMed = null;
+  abrirJanelaMedicoes();
 });
-document.getElementById('medmes-sel-mes').addEventListener('change', renderMedicoesMes);
-document.getElementById('medmes-sel-regiao').addEventListener('change', renderMedicoesMes);
+// Mudar mês ou região sai do modo "só este contrato".
+function trocouFiltroMedicoes(){ focoContratoMed = null; renderMedicoesMes(); }
+document.getElementById('medmes-sel-mes').addEventListener('change', trocouFiltroMedicoes);
+document.getElementById('medmes-sel-regiao').addEventListener('change', trocouFiltroMedicoes);
 document.getElementById('medmes-busca').addEventListener('input', renderMedicoesMes);
 document.getElementById('medmes-fechar').addEventListener('click', function(){
   document.getElementById('medmes-overlay').classList.remove('aberto');
@@ -1745,13 +1763,50 @@ document.getElementById('medmes-fechar').addEventListener('click', function(){
 document.getElementById('medmes-overlay').addEventListener('click', function(ev){
   if(ev.target === this) this.classList.remove('aberto');
 });
+// Link direto para uma medição consolidada: ...?medicao=<contrato>-<nº>
+function urlMedicao(contrato, n){
+  return location.href.split(/[?#]/)[0] + '?medicao=' + encodeURIComponent(contrato + '-' + n);
+}
+function copiarTexto(texto, ok){
+  function plano(){
+    var t = document.createElement('textarea'); t.value = texto; t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.select();
+    try{ document.execCommand('copy'); ok(); }catch(e){} document.body.removeChild(t);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(texto).then(ok, plano); } else plano();
+}
 document.getElementById('medmes-lista').addEventListener('click', function(ev){
+  var bl = ev.target.closest('.btn-link-med');
+  if(bl){
+    var rotulo = bl.getAttribute('data-rotulo') || bl.textContent;
+    copiarTexto(urlMedicao(bl.getAttribute('data-contrato'), bl.getAttribute('data-n')), function(){
+      bl.setAttribute('data-rotulo', rotulo); bl.classList.add('copiado'); bl.textContent = '✓ Link copiado';
+      setTimeout(function(){ bl.classList.remove('copiado'); bl.textContent = rotulo; }, 1600);
+    });
+    return;
+  }
+  if(ev.target.closest('[data-acao="ver-todos"]')){ focoContratoMed = null; renderMedicoesMes(); return; }
   var el = ev.target.closest('.mm-linha');
   if(!el || !this._linhas) return;
   var l = this._linhas[+el.getAttribute('data-idx')];
   document.getElementById('medmes-overlay').classList.remove('aberto');
   abrirOS(l.entrada);
 });
+
+// Se o endereço tem ?medicao=<contrato>-<nº>, abre a janela já nessa medição consolidada.
+function abrirMedicaoPeloLink(){
+  var param = new URLSearchParams(location.search).get('medicao');
+  if(!param) return;
+  var i = param.lastIndexOf('-');
+  if(i < 1) return;
+  var contrato = param.slice(0, i), n = parseInt(param.slice(i + 1), 10);
+  var c = consolidadaDe(contrato, n);
+  if(!c) return;
+  var regiao = '';
+  todasFeaturesOS().some(function(f){ if(f.properties.contrato === contrato){ regiao = f.properties.regiao_os; return true; } return false; });
+  focoContratoMed = contrato;
+  abrirJanelaMedicoes(c.mes, regiao);
+}
 
 // Bloco de O.S.P. — conteúdo da gaveta ao clicar num item da lista.
 function blocoOS(props, semGeometria){
@@ -1828,6 +1883,7 @@ if(MANIFEST_OS.length === 0){
   carregarTodosOsRegiao(function(){
     renderizarListaOS();
     window.__esconderLoadingOS();
+    abrirMedicaoPeloLink();
   });
 }
 
