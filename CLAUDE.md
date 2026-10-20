@@ -361,3 +361,11 @@ Dar dois cliques em `atualizar.bat`: confere o Drive (G:), roda `converter_os.py
 ## Trechos numerados diferente no banco e no shapefile
 
 O conversor casa o `TRECHO_N` do banco com a coluna `Id` do shapefile. Quando o número do banco não existe (ou o Id do shape já é de outro trecho), `TRECHO_PARA_SRE` em `converter_os.py` liga (região, nº do banco) → SRE do shapefile. Hoje: `(1, 274)` → `ACESSO06` (acesso ao aeródromo de Araguatins; no shape tem Id 37, igual ao da TO-415). **Pendente:** os aeródromos de Arraias (280) e Dianópolis (279), R13, NÃO existem no `R13_TRECHOS.shp` — ficam sem geometria até serem desenhados.
+
+### Apontamentos da análise (checklist da medição consolidada)
+
+- Fonte: aba `BD_CheckCons` de cada `BD_LOTE_XX` (mestre: `CHECK_CONS`). Uma coluna por medição (cabeçalho = nº; linha 5 = salvo em); a partir da linha 10, cada célula é `texto do item|m1|...|m37|observação`: uma marca por O.S.P. da medição (legenda do mestre: **X = atendido, R = revisar, N/NA = não se aplica**) e, no último campo, o apontamento escrito. Linhas sem marcas nem observação são títulos de seção.
+- `carregar_checklist_consolidada()` resume por item (revisar = alguma marca R; não se aplica = só N/NA; senão atendido) e guarda os apontamentos em `consolidada[contrato][i].checklist` (`n_atendidos`, `n_revisar`, `n_na`, `n_corrigidos`, `apontamentos[{secao,item,revisar,obs,corrigido}]`). Observações que são só "ATENDIDO"/"OK"/"NA" são descartadas (`OBS_SEM_VALOR`), repetidas na mesma seção viram uma só, e "(CORRIGIDO)" vira o selo ✔ corrigido.
+- **As marcas NÃO são ligadas a O.S.P. específicas** (a ordem dos slots não está confirmada; no Lote 12 o R coincidiu com a O.S.P. 111 em ordem crescente, mas no Lote 3-Ética não bateu). Por isso o bloco "📝 Apontamentos da análise" fica só no cartão da consolidada, nunca no detalhe de uma O.S.P.
+- Medição sem checklist registrado mostra "Checklist da análise: não lançado". O BD guarda só as últimas 2–3 medições de cada lote.
+- Atenção ao escrever regex via script: `\b` em string normal vira caractere de controle (backspace) — usar `chr(92)` ou raw string.

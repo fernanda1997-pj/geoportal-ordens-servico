@@ -327,6 +327,12 @@ a.chip-doc{text-decoration:none;}
 .mm-consol-titulo{font-size:12px; font-weight:700; color:var(--azul); margin:10px 0 2px;}
 .consol-ok{color:#15803D; font-weight:700;}
 .consol-erro{color:#B91C1C; font-weight:700;}
+.mm-apont{margin-top:8px; padding-top:6px; border-top:1px dashed var(--borda); font-size:11.5px;}
+.mm-apont-vazio{color:var(--cinza);}
+.mm-apont ul{margin:4px 0 0; padding-left:16px;}
+.mm-apont li{margin:2px 0; white-space:pre-line;}
+.mm-apont .rev{color:#B45309; font-weight:700;}
+.mm-apont .ok{color:#15803D; font-weight:700;}
 @media (max-width:520px){ .mm-consol-grade{grid-template-columns:repeat(2, 1fr);} }
 </style>
 </head>
@@ -1584,6 +1590,21 @@ function resultadoConsol(c){
   return '<span class="consol-erro">⚠️ Não confere</span> a consolidada está <b>'+fmtReais(Math.abs(c.dif))+'</b> '+
     (c.dif > 0 ? 'acima' : 'abaixo')+' do que as '+base+' somam';
 }
+function blocoApontamentos(c){
+  var k = c.checklist;
+  if(!k) return '<div class="mm-apont mm-apont-vazio">📝 Checklist da análise: não lançado para esta medição</div>';
+  var lista = (k.apontamentos || []).map(function(a){
+    var tit = a.secao ? '<b>'+escaparHtml(a.secao)+'</b>' : '';
+    var marca = a.corrigido ? ' <span class="ok">✔ corrigido</span>' : (a.revisar ? ' <span class="rev">⚠ revisar</span>' : '');
+    return '<li>'+tit+marca+(a.obs ? ': '+escaparHtml(a.obs) : ' — '+escaparHtml(a.item))+'</li>';
+  }).join('');
+  return '<div class="mm-apont">'+
+    '<div><b>📝 Apontamentos da análise</b>'+(k.salvo_em ? ' <span style="color:var(--cinza);">(checklist salvo em '+escaparHtml(k.salvo_em)+')</span>' : '')+'</div>'+
+    '<div style="margin-top:2px;">'+k.n_atendidos+' atendidos · <b'+(k.n_revisar ? ' style="color:#B45309;"' : '')+'>'+k.n_revisar+' para revisar</b> · '+k.n_na+' não se aplicam'+
+      ((k.apontamentos || []).length ? ' · '+k.apontamentos.length+(k.apontamentos.length > 1 ? ' apontamentos' : ' apontamento')+(k.n_corrigidos ? ' ('+k.n_corrigidos+' corrigido'+(k.n_corrigidos > 1 ? 's' : '')+')' : '') : '')+'</div>'+
+    (lista ? '<ul>'+lista+'</ul>' : '<div style="color:var(--cinza);margin-top:2px;">Nenhum apontamento registrado.</div>')+
+  '</div>';
+}
 function cardConsolidada(contrato, c){
   var docs = (c.docs || []).map(chipDoc).join('');
   return '<div class="mm-consol">'+
@@ -1595,7 +1616,8 @@ function cardConsolidada(contrato, c){
       '<div><small>Diferença</small><b>'+fmtDifReais(c.dif)+'</b></div>'+
     '</div>'+
     '<div class="mm-consol-res">'+resultadoConsol(c)+'</div>'+
-    (docs ? '<div style="margin-top:4px;font-size:10.5px;color:#334155;">'+docs+'</div>' : '')+
+    blocoApontamentos(c)+
+    (docs ? '<div style="margin-top:6px;font-size:10.5px;color:#334155;">'+docs+'</div>' : '')+
   '</div>';
 }
 // Cartões da consolidada do mês (respeita o filtro de região da janela).

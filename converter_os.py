@@ -788,6 +788,78 @@ def carregar_pdfs_consolidada(pasta):
     return por_n
 
 
+OBS_SEM_VALOR = {'ATENDIDO', 'OK', 'SIM', 'NA', 'N', 'X', 'N/A', 'NAO SE APLICA', 'CONFORME', 'ADEQUADO'}
+
+
+def carregar_checklist_consolidada(wb):
+    """{nº da medição: {salvo_em, n_itens, n_atendidos, n_revisar, n_na, apontamentos}}
+    a partir de BD_CheckCons — checklist de análise da medição CONSOLIDADA
+    (planilha mestre: CHECK_CONS). Uma coluna por medição (cabeçalho = nº); cada
+    linha a partir da 10 é uma célula "texto do item|m1|m2|...|m37|observação":
+    uma marca por O.S.P. da medição (X = atendido, R = revisar, N/NA = não se
+    aplica) e, no último campo, o apontamento escrito pela análise. Linhas de
+    título de grupo (ex. "RELATÓRIO FOTOGRÁFICO - OBRIGATÓRIO") não têm marcas.
+    Item "para revisar" = alguma marca R; "não se aplica" = só N/NA; senão
+    "atendido". As marcas NÃO são ligadas a O.S.P. específicas (a ordem dos
+    slots não está confirmada) — só o resumo por item e a observação."""
+    if 'BD_CheckCons' not in wb.sheetnames:
+        return {}
+    ws = wb['BD_CheckCons']
+    por_n = {}
+    for k in range(1, ws.max_column + 1):
+        n = _int_seguro(ws.cell(row=1, column=k).value)
+        if n is None:
+            continue
+        salvo = ws.cell(row=5, column=k).value
+        secao = ''
+        itens = revisar = na = atend = 0
+        apont = []
+        vistos = {}
+        for r in range(10, ws.max_row + 1):
+            v = ws.cell(row=r, column=k).value
+            if not isinstance(v, str) or '|' not in v:
+                continue
+            partes = v.split('|')
+            texto = re.sub(r'\s+', ' ', partes[0]).strip()
+            if not texto:
+                continue
+            marcas = [m.strip().upper() for m in partes[1:-1] if m.strip()]
+            obs = partes[-1].strip()
+            if not marcas and not obs:
+                secao = re.sub(r'\s*-\s*(OBRIGAT[ÓO]RIO|CONFORME O CASO)\s*$', '', texto, flags=re.I).strip().capitalize()
+                secao = re.sub(r'\bs$', 'S', secao)  # curva s -> curva S (so a letra solta)
+                continue
+            itens += 1
+            tem_r = 'R' in marcas
+            so_na = bool(marcas) and all(m in ('N', 'NA') for m in marcas)
+            if tem_r:
+                revisar += 1
+            elif so_na:
+                na += 1
+            else:
+                atend += 1
+            obs_ok = '' if _norm(obs) in OBS_SEM_VALOR else obs
+            if tem_r or obs_ok:
+                # o mesmo texto costuma se repetir em itens vizinhos (ex.: 3 itens de mapa
+                # com "INSERIR MAPAS") — junta em um só apontamento por seção
+                corrigido = 'CORRIGID' in _norm(obs_ok)
+                limpo = re.sub(r'\s*\(\s*corrigid[oa]\s*\)\s*\.?\s*$', '', obs_ok, flags=re.I).strip()
+                chave = (secao, limpo or texto[:150])
+                if chave in vistos:
+                    vistos[chave]['revisar'] = vistos[chave]['revisar'] or tem_r
+                    continue
+                vistos[chave] = {'secao': secao, 'item': texto[:150], 'revisar': tem_r,
+                                 'obs': limpo or None, 'corrigido': corrigido}
+                apont.append(vistos[chave])
+        por_n[n] = {
+            'salvo_em': salvo.strftime('%d/%m/%Y') if hasattr(salvo, 'strftime') else None,
+            'n_itens': itens, 'n_atendidos': atend, 'n_revisar': revisar, 'n_na': na,
+            'n_corrigidos': sum(1 for a in apont if a['corrigido']),
+            'apontamentos': apont,
+        }
+    return por_n
+
+
 def carregar_consolidada(wb, pasta_lote):
     if 'BD_STATUSCONS' not in wb.sheetnames:
         return []
@@ -801,6 +873,7 @@ def carregar_consolidada(wb, pasta_lote):
     unit_adm = _valor_unitario_item(wb, '9.1.1') or 0
     qtd_adm = _quantidades_item(wb, '9.1.1')
     pdfs = carregar_pdfs_consolidada(os.path.join(pasta_lote, 'INSP_PDF_CONSOLIDADO'))
+    checklists = carregar_checklist_consolidada(wb)
     ws = wb['BD_STATUSCONS']
     itens = []
     for r in range(1, ws.max_row + 1):
@@ -824,6 +897,7 @@ def carregar_consolidada(wb, pasta_lote):
             'confere': abs(dif) <= TOLERANCIA_CONSOLIDADA,
             'status': STATUS_CONSOLIDADA.get(_norm(status_raw), status_raw.capitalize() or None),
             'docs': pdfs.get(n, []),
+            'checklist': checklists.get(n),
         })
     itens.sort(key=lambda i: i['n'])
     return itens
