@@ -111,6 +111,11 @@
   .kpi-mini b{display:block; font-size:15px; color:var(--azul); font-weight:800; white-space:nowrap;}
   .kpi-mini span{font-size:9px; color:var(--cinza); line-height:1.25;}
   .kpi-detalhe{font-size:.92em; color:var(--cinza); font-weight:400;}
+  .origem-link{color:var(--azul); text-decoration:underline dotted; cursor:pointer;}
+  .origem-link.ativo{font-weight:800; text-decoration:underline; background:#E0E7FF; border-radius:4px; padding:0 3px;}
+  .badge-origem{display:inline-block; font-size:10px; font-weight:700; border-radius:10px; padding:1px 7px; margin-right:4px;}
+  .badge-origem.mes{background:#DCFCE7; color:#166534;}
+  .badge-origem.antes{background:#E5E7EB; color:#374151;}
 
   /* KPIs que também funcionam como atalho de filtro (Emitidas/Concluídas/
      Pendentes) — mesmo elemento nos dois lugares (painel lateral e Painel
@@ -742,6 +747,9 @@ var situacoesAtivasOS = new Set();
 // situacoesAtivasOS: a usuária quer poder ver "Julho + Agosto" junto, por
 // exemplo. Vazio = "Todos os meses".
 var mesesAtivosOS = new Set();
+// Com filtro de Mês: '' = todas · 'mes' = só as EMITIDAS no mês · 'anteriores' = só as
+// emitidas antes que têm o mês no cronograma (clicando nos números do total).
+var origemMesOS = '';
 var ORDEM_MESES_COMPLETA = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 // Busca livre pelo número da O.S.P. — não repopula nenhum outro select
@@ -1042,7 +1050,7 @@ function atualizarVisualKpiClicaveis(){
   });
 }
 
-function entradasFiltradasOS(){
+function entradasFiltradasOS(semOrigem){
   var tipo = document.getElementById('os-sel-tipo').value;
   var contrato = document.getElementById('os-sel-contrato').value;
   var feats = todasFeaturesOS().filter(function(f){
@@ -1052,6 +1060,10 @@ function entradasFiltradasOS(){
     if(contrato && p.contrato !== contrato) return false;
     if(situacoesAtivasOS.size && !situacoesAtivasOS.has(p.situacao)) return false;
     if(mesesAtivosOS.size && !mesesDaEntrada(p).some(function(m){ return mesesAtivosOS.has(m); })) return false;
+    if(!semOrigem && mesesAtivosOS.size && origemMesOS){
+      var noMes = mesesAtivosOS.has(p.data_emissao);
+      if(origemMesOS === 'mes' ? !noMes : noMes) return false;
+    }
     if(filtroAtrasadas && !p.atrasada) return false;
     if(!ospBate(p, buscaOspOS)) return false;
     return true;
@@ -1072,6 +1084,7 @@ function atualizarResumoFiltros(){
   var contrato = document.getElementById('os-sel-contrato').value;
   if(contrato) partes.push(rotuloContrato(contrato));
   if(mesesAtivosOS.size) partes.push(ordenarMesesEmissao(Array.from(mesesAtivosOS)).join(' + '));
+  if(mesesAtivosOS.size && origemMesOS) partes.push(origemMesOS === 'mes' ? 'só emitidas no mês' : 'só de meses anteriores');
   if(filtroAtrasadas) partes.push('⏰ atrasadas');
   if(buscaOspOS) partes.push('nº "'+buscaOspOS+'"');
   document.getElementById('filtros-resumo').textContent = partes.length ? partes.join(' · ') : 'todas as O.S.P.';
@@ -1090,17 +1103,33 @@ function rotuloTotalOS(idRotulo, entradas){
   var el = document.getElementById(idRotulo);
   var card = el.parentNode;
   if(!mesesAtivosOS.size){
+    origemMesOS = '';
     el.textContent = 'emitidas';
     card.title = 'Ver todas as O.S.P. emitidas';
     return;
   }
   var nomeMes = mesesAtivosOS.size === 1 ? Array.from(mesesAtivosOS)[0] : 'nos meses escolhidos';
-  var noMes = entradas.filter(function(e){ return mesesAtivosOS.has(e.props.data_emissao); }).length;
-  var antes = entradas.length - noMes;
+  var doMes = entradasFiltradasOS(true);   // contagem do mês inteiro, sem o recorte de origem
+  var noMes = doMes.filter(function(e){ return mesesAtivosOS.has(e.props.data_emissao); }).length;
+  var antes = doMes.length - noMes;
   el.textContent = 'O.S.P. ' + (mesesAtivosOS.size === 1 ? 'em ' : '') + nomeMes;
   var det = document.createElement('small');
   det.className = 'kpi-detalhe';
-  det.textContent = noMes + ' emitida' + (noMes === 1 ? '' : 's') + ' no mês · ' + antes + ' de meses anteriores';
+  // os dois números filtram a lista (clicar de novo volta a mostrar todas)
+  function link(origem, texto, dica){
+    var a = document.createElement('a');
+    a.href = '#'; a.className = 'origem-link' + (origemMesOS === origem ? ' ativo' : '');
+    a.textContent = texto; a.title = dica;
+    a.addEventListener('click', function(ev){
+      ev.preventDefault(); ev.stopPropagation();
+      origemMesOS = origemMesOS === origem ? '' : origem;
+      renderizarListaOS();
+    });
+    return a;
+  }
+  det.appendChild(link('mes', noMes + ' emitida' + (noMes === 1 ? '' : 's') + ' no mês', 'Mostrar só as O.S.P. emitidas no mês'));
+  det.appendChild(document.createTextNode(' · '));
+  det.appendChild(link('anteriores', antes + ' de meses anteriores', 'Mostrar só as emitidas antes, que têm o mês no cronograma'));
   el.appendChild(document.createElement('br'));
   el.appendChild(det);
   card.title = noMes + ' emitida(s) no mês escolhido + ' + antes +
@@ -1127,6 +1156,9 @@ function renderizarListaOS(){
         '<div class="sub">'+rotuloContrato(p.contrato)+' · '+(p.servico||'—')+'</div>'+
         '<div class="rodape">'+
           '<span class="badge-situacao" style="background:'+corSituacao(p.situacao)+'">'+rotuloComIcone(p.situacao)+'</span>'+
+          (mesesAtivosOS.size ? (mesesAtivosOS.has(p.data_emissao)
+              ? '<span class="badge-origem mes" title="Emitida no mês escolhido">🆕 emitida no mês</span>'
+              : '<span class="badge-origem antes" title="Emitida antes; tem o mês no cronograma de execução">↪ de '+(p.data_emissao||'?')+'</span>') : '')+
           (p.atrasada ? '<span class="badge-situacao" style="background:#B91C1C" title="Prazo final era '+p.prazo_limite+'">⏰ Atrasada</span>' : '')+
           (p.checklist && p.checklist.n_nao ? '<span class="badge-situacao" style="background:#9A3412" title="Itens do checklist da supervisão marcados como NÃO">📋 '+p.checklist.n_nao+'</span>' : '')+
           '<span class="valor">'+fmtReais(p.valor_previsto)+'</span>'+
@@ -1169,6 +1201,7 @@ function descricaoFiltrosOS(){
   var situacaoTxt = situacoesAtivasOS.size ? Array.from(situacoesAtivasOS).map(rotuloSituacao).join(' + ') : 'todas as situações';
   var base = tipoTxt + ' · ' + regiaoTxt + ' · ' + contrato + ' · ' + situacaoTxt;
   if(mesesAtivosOS.size) base += ' · ' + ordenarMesesEmissao(Array.from(mesesAtivosOS)).join(' + ');
+  if(mesesAtivosOS.size && origemMesOS) base += origemMesOS === 'mes' ? ' · só emitidas no mês' : ' · só de meses anteriores';
   if(filtroAtrasadas) base += ' · ⏰ atrasadas';
   if(buscaOspOS) base += ' · nº "' + buscaOspOS + '"';
   return base;
