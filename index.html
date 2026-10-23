@@ -1020,6 +1020,7 @@ function aplicarFiltroSituacaoRapido(tipo, todasFeats){
     situacoesAtivasOS = new Set(Object.keys(situacoes));
   }else{
     situacoesAtivasOS.clear();
+    origemMesOS = '';   // clicar no total também desfaz "só emitidas no mês / só de meses anteriores"
   }
   atualizarVisualPillsSituacao();
   atualizarVisualKpiClicaveis();
@@ -1133,7 +1134,7 @@ function rotuloTotalOS(idRotulo, entradas){
   el.appendChild(document.createElement('br'));
   el.appendChild(det);
   card.title = noMes + ' emitida(s) no mês escolhido + ' + antes +
-    ' emitida(s) antes, que têm o mês no cronograma de execução (continuam em andamento ou foram medidas no mês).';
+    ' emitida(s) antes, que têm o mês no cronograma de execução (continuam em andamento ou foram medidas no mês).' + (origemMesOS ? ' Clique aqui para voltar a ver todas.' : '');
 }
 
 function renderizarListaOS(){
