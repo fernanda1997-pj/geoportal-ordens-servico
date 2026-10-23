@@ -110,6 +110,7 @@
   }
   .kpi-mini b{display:block; font-size:15px; color:var(--azul); font-weight:800; white-space:nowrap;}
   .kpi-mini span{font-size:9px; color:var(--cinza); line-height:1.25;}
+  .kpi-detalhe{font-size:.92em; color:var(--cinza); font-weight:400;}
 
   /* KPIs que também funcionam como atalho de filtro (Emitidas/Concluídas/
      Pendentes) — mesmo elemento nos dois lugares (painel lateral e Painel
@@ -375,7 +376,7 @@ a.chip-doc{text-decoration:none;}
     </header>
     <div class="conteudo" id="painel-os">
       <div class="kpis-grade">
-        <div class="kpi-mini kpi-clicavel" data-filtro-situacao="todas" title="Ver todas as O.S.P. emitidas"><b id="os-total">—</b><span>emitidas</span></div>
+        <div class="kpi-mini kpi-clicavel" data-filtro-situacao="todas" title="Ver todas as O.S.P. emitidas"><b id="os-total">—</b><span id="os-total-label">emitidas</span></div>
         <div class="kpi-mini kpi-clicavel" data-filtro-situacao="concluidas" title="Filtrar só as concluídas"><b id="os-concluidas">—</b><span>concluídas</span></div>
         <div class="kpi-mini kpi-clicavel" data-filtro-situacao="pendentes" title="Filtrar as ainda não concluídas"><b id="os-pendentes">—</b><span>pendentes</span></div>
         <div class="kpi-mini kpi-clicavel" data-filtro-atrasada="1" title="Filtrar só as atrasadas (passou do prazo)"><b id="os-atrasadas">—</b><span>atrasadas</span></div>
@@ -491,7 +492,7 @@ a.chip-doc{text-decoration:none;}
 
     <div class="dash-corpo">
       <div class="dash-kpis" data-secao="kpis">
-        <div class="dash-kpi kpi-clicavel" data-filtro-situacao="todas" title="Ver todas as O.S.P. emitidas"><b id="dash-kpi-total">—</b><span>emitidas</span></div>
+        <div class="dash-kpi kpi-clicavel" data-filtro-situacao="todas" title="Ver todas as O.S.P. emitidas"><b id="dash-kpi-total">—</b><span id="dash-kpi-total-label">emitidas</span></div>
         <div class="dash-kpi kpi-clicavel" data-filtro-situacao="concluidas" title="Filtrar só as concluídas"><b id="dash-kpi-concluidas">—</b><span>concluídas</span></div>
         <div class="dash-kpi kpi-clicavel" data-filtro-situacao="pendentes" title="Filtrar as ainda não concluídas"><b id="dash-kpi-pendentes">—</b><span>pendentes</span></div>
         <div class="dash-kpi kpi-clicavel" data-filtro-atrasada="1" title="Filtrar só as atrasadas (passou do prazo)"><b id="dash-kpi-atrasadas">—</b><span>atrasadas</span></div>
@@ -1081,12 +1082,38 @@ document.getElementById('btn-filtros').addEventListener('click', function(){
   document.getElementById('filtros-corpo').classList.toggle('aberto');
 });
 
+// Rótulo do total: sem filtro de mês são as "emitidas"; com filtro de mês a lista
+// inclui também as O.S.P. de meses anteriores que têm o mês no cronograma
+// (mesesDaEntrada), então o rótulo separa as duas coisas — "18 emitidas" em
+// setembro confundia com "emitidas EM setembro" (10, as outras 8 vinham de jul/ago).
+function rotuloTotalOS(idRotulo, entradas){
+  var el = document.getElementById(idRotulo);
+  var card = el.parentNode;
+  if(!mesesAtivosOS.size){
+    el.textContent = 'emitidas';
+    card.title = 'Ver todas as O.S.P. emitidas';
+    return;
+  }
+  var nomeMes = mesesAtivosOS.size === 1 ? Array.from(mesesAtivosOS)[0] : 'nos meses escolhidos';
+  var noMes = entradas.filter(function(e){ return mesesAtivosOS.has(e.props.data_emissao); }).length;
+  var antes = entradas.length - noMes;
+  el.textContent = 'O.S.P. ' + (mesesAtivosOS.size === 1 ? 'em ' : '') + nomeMes;
+  var det = document.createElement('small');
+  det.className = 'kpi-detalhe';
+  det.textContent = noMes + ' emitida' + (noMes === 1 ? '' : 's') + ' no mês · ' + antes + ' de meses anteriores';
+  el.appendChild(document.createElement('br'));
+  el.appendChild(det);
+  card.title = noMes + ' emitida(s) no mês escolhido + ' + antes +
+    ' emitida(s) antes, que têm o mês no cronograma de execução (continuam em andamento ou foram medidas no mês).';
+}
+
 function renderizarListaOS(){
   montarFiltrosOS();
   var entradas = entradasFiltradasOS();
   var concluidas = entradas.filter(function(e){ return e.props.situacao === 'Concluída'; }).length;
   var valor = entradas.reduce(function(s, e){ return s + (e.props.valor_previsto||0); }, 0);
   document.getElementById('os-total').textContent = entradas.length;
+  rotuloTotalOS('os-total-label', entradas);
   document.getElementById('os-concluidas').textContent = concluidas;
   document.getElementById('os-pendentes').textContent = entradas.length - concluidas;
   document.getElementById('os-atrasadas').textContent = entradas.filter(function(e){ return e.props.atrasada; }).length;
@@ -1222,6 +1249,7 @@ function atualizarDashboard(){
   var pct = totalPrevisto > 0 ? (totalExecutado/totalPrevisto*100) : 0;
 
   document.getElementById('dash-kpi-total').textContent = entradas.length;
+  rotuloTotalOS('dash-kpi-total-label', entradas);
   document.getElementById('dash-kpi-concluidas').textContent = concluidas;
   document.getElementById('dash-kpi-pendentes').textContent = entradas.length - concluidas;
   document.getElementById('dash-kpi-atrasadas').textContent = entradas.filter(function(e){ return e.props.atrasada; }).length;
