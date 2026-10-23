@@ -67,6 +67,12 @@ BASE_SISTEMA = (
     r'\SISTEMA_AGETO\MANUTENÇÃO RODOVIÁRIA'
 )
 
+# Índice nome -> ID dos PDFs no Drive, gerado pelo Apps Script
+# apps_script/indice_pdfs.gs na conta da usuária (o Drive do PC não mostra o
+# ID). Com o ID o geoportal abre o PDF direto; sem ele, cai na busca por nome.
+INDICE_PDFS = r'G:\Meu Drive\indice_pdfs_sistema_ageto.json'
+INDICE_DRIVE = {}  # _norm("LOTE 01/BOLETIM_PDF/arquivo.pdf") -> ID
+
 # restauração (chave) -> manutenção/geográfico (valor) — mesma área física.
 MAPA_REGIAO_GEOGRAFICA = {14: 1, 15: 2, 16: 3, 22: 11, 23: 12, 24: 13}
 REGIOES_RESTAURACAO = set(MAPA_REGIAO_GEOGRAFICA.keys())
@@ -131,6 +137,28 @@ def _norm(s):
     s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
     s = re.sub(r'\s+', ' ', s).strip().upper()
     return s
+
+
+def carregar_indice_drive():
+    if not os.path.isfile(INDICE_PDFS):
+        qa(f'{INDICE_PDFS} não encontrado — documentos abrem pela busca do Drive (rodar o Apps Script)')
+        return
+    with open(INDICE_PDFS, encoding='utf-8') as f:
+        indice = json.load(f)
+    for caminho, id_arquivo in indice.get('arquivos', {}).items():
+        INDICE_DRIVE[_norm(caminho)] = id_arquivo
+    print(f"Índice do Drive: {len(INDICE_DRIVE)} PDF(s), gerado em {indice.get('gerado_em', '?')}")
+
+
+def doc_drive(tipo, arquivo, pasta, no_drive=True):
+    """{tipo, arquivo, no_drive[, id]} — 'id' só quando o PDF está no índice."""
+    d = {'tipo': tipo, 'arquivo': arquivo, 'no_drive': no_drive}
+    if no_drive:
+        rel = os.path.relpath(os.path.join(pasta, arquivo), BASE_SISTEMA).replace('\\', '/')
+        id_arquivo = INDICE_DRIVE.get(_norm(rel))
+        if id_arquivo:
+            d['id'] = id_arquivo
+    return d
 
 
 def _mapa_colunas(ws, linha_cabecalho=1):
@@ -533,7 +561,7 @@ def carregar_boletins(wb, pasta_pdf=None):
         if all(d['arquivo'] != (real or arquivo) for d in docs):
             # 'no_drive' = o PDF existe mesmo no Drive (nome real, com acentos);
             # senão fica o nome da planilha e o geoportal não oferece abrir.
-            docs.append({'tipo': tipo, 'arquivo': real or arquivo, 'no_drive': bool(real)})
+            docs.append(doc_drive(tipo, real or arquivo, pasta_pdf, bool(real)))
     # BD_BOLETIM nem sempre está preenchida (ex.: LOTE 16 tem os PDFs na pasta e
     # a aba vazia) — então também lê os nomes direto da pasta do Drive
     # ("BOLETIM_OSP_0005_MED_6ª MEDIÇÃO PARCIAL_....pdf"). INSP_CONSOL_* não tem
@@ -546,7 +574,7 @@ def carregar_boletins(wb, pasta_pdf=None):
             continue
         docs = por_osp.setdefault(int(m.group(1)), {}).setdefault(int(m.group(2)), [])
         if all(d['arquivo'] != real for d in docs):
-            docs.append({'tipo': tipo_do_boletim(real), 'arquivo': real, 'no_drive': True})
+            docs.append(doc_drive(tipo_do_boletim(real), real, pasta_pdf))
     # A planilha às vezes lista o mesmo documento com o nome digitado errado
     # ("CÁCULO") e o arquivo real existe com outro nome: se já há um PDF
     # existente desse tipo na medição, descarta o item "sem arquivo".
@@ -784,7 +812,7 @@ def carregar_pdfs_consolidada(pasta):
         if not m:
             continue
         docs = por_n.setdefault(int(m.group(1)), [])
-        docs.append({'tipo': rotulo_consolidada(suf.group(1) if suf else ''), 'arquivo': f, 'no_drive': True})
+        docs.append(doc_drive(rotulo_consolidada(suf.group(1) if suf else ''), f, pasta))
     return por_n
 
 
@@ -943,7 +971,7 @@ def carregar_levantamentos(pasta_inv):
             if not m:
                 continue
             osp, sufixo = int(m.group(1)), m.group(2)
-        por_osp.setdefault(osp, []).append({'tipo': rotulo_levantamento(sufixo), 'arquivo': f, 'no_drive': True})
+        por_osp.setdefault(osp, []).append(doc_drive(rotulo_levantamento(sufixo), f, pasta_inv))
     return por_osp
 
 
@@ -1164,6 +1192,7 @@ def main():
         print(f'Pasta do SISTEMA_AGETO não encontrada: {BASE_SISTEMA}')
         print('Confirme se o Google Drive está montado em G:\\ e sincronizado.')
         return
+    carregar_indice_drive()
 
     # Regiões de manutenção (1,2,3,11,12,13) + restauração (14,15,16,22,24)
     # — 23 fica de fora, não existe banco ainda (ver topo do arquivo).

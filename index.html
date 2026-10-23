@@ -1615,15 +1615,17 @@ function blocoChecklist(c){
 // uma linha por mês medido, com nº da medição, valor, situação na época, os
 // documentos do boletim (só os nomes — os PDFs ficam no Drive) e a
 // justificativa recolhida.
-// Link de BUSCA do Drive pelo nome exato do PDF (o Drive instalado no PC não
-// expõe o ID do arquivo, então não dá pra montar o link direto). Quem não tem
-// acesso à pasta SISTEMA_AGETO não vê resultado.
-function urlDriveBusca(arquivo){
-  return 'https://drive.google.com/drive/search?q='+encodeURIComponent('"'+arquivo+'"');
+// Com o ID (índice do Apps Script, ver apps_script/indice_pdfs.gs) abre o PDF
+// direto; sem ele, cai na BUSCA do Drive pelo nome exato (PDF subido depois
+// do último índice). Nos dois casos, quem não tem acesso à pasta
+// SISTEMA_AGETO não abre.
+function urlDriveDoc(d){
+  if(d.id) return 'https://drive.google.com/file/d/'+encodeURIComponent(d.id)+'/view';
+  return 'https://drive.google.com/drive/search?q='+encodeURIComponent('"'+d.arquivo+'"');
 }
 function chipDoc(d){
   if(!d.no_drive) return '<span class="chip-doc sem-arquivo" title="Este PDF ainda não está no Drive: '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+'</span>';
-  return '<a class="chip-doc" target="_blank" rel="noopener" data-arquivo="'+escaparHtml(d.arquivo)+'" href="'+urlDriveBusca(d.arquivo)+'" title="Abrir no Drive: '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+' ↗</a>';
+  return '<a class="chip-doc" target="_blank" rel="noopener" data-arquivo="'+escaparHtml(d.arquivo)+'" href="'+urlDriveDoc(d)+'" title="'+(d.id ? 'Abrir PDF' : 'Buscar no Drive')+': '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+' ↗</a>';
 }
 
 // Levantamento / inventário da O.S.P. (PDFs de INVENTARIOS_PDF no Drive).
@@ -1736,8 +1738,8 @@ function blocoMedicoes(medicoes, valorPrevisto, contrato){
     linhas+'</div>';
 }
 
-// Ao abrir o documento no Drive, copia também o nome do arquivo (se a busca do
-// Drive não achar, é só colar na caixa de pesquisa).
+// Ao abrir o documento no Drive, copia também o nome do arquivo (se o link não
+// abrir, é só colar na caixa de pesquisa do Drive).
 document.addEventListener('click', function(ev){
   var b = ev.target.closest && ev.target.closest('a.chip-doc');
   if(!b) return;
