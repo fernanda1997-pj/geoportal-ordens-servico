@@ -411,15 +411,18 @@ def carregar_servicos_por_osp(wb, catalogo):
     # (quebrou o gráfico de ranking "Por serviço" mesmo limitando a 3
     # itens inteiros). Mostra só os 2 primeiros itens distintos, cada um
     # cortado em ~45 caracteres, + "(+N itens)" quando sobrar mais.
-    resultado = {}
+    # A lista inteira (sem cortar) volta junto: é ela que o site de fotos usa
+    # pra casar foto x O.S.P. (dados/osp_fotos.js).
+    resultado, completos = {}, {}
     for osp, descs in servicos.items():
         unicos = list(dict.fromkeys(descs))  # remove duplicata preservando ordem
+        completos[osp] = unicos
         curtos = [d if len(d) <= 45 else d[:42].rstrip() + '...' for d in unicos[:2]]
         texto = ' / '.join(curtos)
         if len(unicos) > 2:
             texto += f' (+{len(unicos) - 2} itens)'
         resultado[osp] = texto
-    return resultado
+    return resultado, completos
 
 
 # ---------------------------------------------------------------------
@@ -738,6 +741,7 @@ def carregar_checklists(wb):
 # "aprova" nada por conta própria; mostra o status e, ao lado, se os valores batem.
 # ---------------------------------------------------------------------
 CONSOLIDADA = {}  # {contrato: [medição consolidada, ...]} -> dados/consolidada.js
+ITENS_POR_OSP = {}  # {(contrato, osp): [itens de orçamento inteiros]} -> dados/osp_fotos.js
 TOLERANCIA_CONSOLIDADA = 1.00
 STATUS_CONSOLIDADA = {
     'APROVADA': 'Aprovada', 'EM ANALISE': 'Em análise', 'CORRECAO': 'Correção',
@@ -1029,7 +1033,9 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
         return
 
     catalogo_itens = carregar_catalogo_itens(wb)
-    servicos_por_osp = carregar_servicos_por_osp(wb, catalogo_itens)
+    servicos_por_osp, itens_por_osp = carregar_servicos_por_osp(wb, catalogo_itens)
+    for osp, itens in itens_por_osp.items():
+        ITENS_POR_OSP[(contrato, osp)] = itens
     medicoes_por_osp = carregar_medicoes(wb)
     checklists_por_osp = carregar_checklists(wb)
     boletins_por_osp = carregar_boletins(wb, os.path.join(os.path.dirname(caminho), 'BOLETIM_PDF'))
@@ -1187,6 +1193,44 @@ def arquivo_bd_da_pasta(pasta):
     return candidatos[0]
 
 
+# ---------------------------------------------------------------------
+# dados/osp_fotos.js — versão enxuta (sem geometria) de cada O.S.P.+trecho,
+# lida pela aba "O.S.P." do site de Fotos de Campo
+# (fotos-campo-rta-msi.vercel.app) pra casar foto x O.S.P. por região,
+# trecho, período e serviço. Os itens vão INTEIROS (o `servico` dos
+# os_R*.js é cortado pra caber no gráfico).
+#   fim_medicao = último dia do período da última medição (ISO), se houver.
+# ---------------------------------------------------------------------
+def escrever_osp_fotos(geral):
+    vistos, lista = set(), []
+    for feats in geral.values():
+        for f in feats:
+            p = f['properties']
+            chave = (p['contrato'], p['osp'], p['trecho_num'])
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+            fim_medicao = None
+            for m in p.get('medicoes') or []:
+                datas = re.findall(r'(\d{2})/(\d{2})/(\d{4})', m.get('periodo') or '')
+                if datas:
+                    d, mes, a = datas[-1]
+                    iso = f'{a}-{mes}-{d}'
+                    fim_medicao = max(fim_medicao, iso) if fim_medicao else iso
+            lista.append({
+                'contrato': p['contrato'], 'osp': p['osp'], 'regiao_os': p['regiao_os'],
+                'trecho': p['trecho_num'], 'trecho_nome': p['trecho_nome'],
+                'situacao': p['situacao_final'], 'valor': p['valor_previsto'],
+                'emissao': p['data_emissao'], 'prazo_limite': p['prazo_limite'], 'fim_medicao': fim_medicao,
+                'itens': ITENS_POR_OSP.get((p['contrato'], p['osp']), []),
+            })
+    lista.sort(key=lambda o: (o['regiao_os'], o['contrato'], o['osp']))
+    with open(os.path.join(DADOS_DIR, 'osp_fotos.js'), 'w', encoding='utf-8') as f:
+        f.write('// Gerado por converter_os.py — não editar à mão. Lido pelo site de Fotos de Campo (aba O.S.P.).\n')
+        f.write('window.OSP_FOTOS = ' + json.dumps(lista, ensure_ascii=False) + ';\n')
+    print(f'  -> dados/osp_fotos.js ({len(lista)} O.S.P.+trecho, pro site de Fotos de Campo)')
+
+
 def main():
     if not os.path.isdir(BASE_SISTEMA):
         print(f'Pasta do SISTEMA_AGETO não encontrada: {BASE_SISTEMA}')
@@ -1239,6 +1283,8 @@ def main():
                 qa(f"{contrato}: {i['n']}ª medição consolidada ({i['mes']}) não confere — consolidada "
                    f"R$ {i['valor']:,.2f} x O.S.P. R$ {i['soma_osp']:,.2f} + adm. local R$ {i['adm_local']:,.2f} "
                    f"(diferença R$ {i['dif']:,.2f})")
+
+    escrever_osp_fotos(geral)
 
     with open(os.path.join(DADOS_DIR, 'manifest_os.js'), 'w', encoding='utf-8') as f:
         f.write('// Gerado por converter_os.py — não editar à mão\n')
