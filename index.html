@@ -151,6 +151,11 @@
   .os-item:hover{background:var(--fundo);}
   .os-item .rodovia{font-size:12.5px; font-weight:600; color:var(--azul);}
   .os-item .sub{font-size:11px; color:var(--cinza); margin-top:1px;}
+  .os-item .servico-toggle{
+    display:inline-block; margin-left:4px; padding:0 6px; border-radius:9px; background:var(--azul); color:#fff;
+    font-size:10px; font-weight:700; line-height:16px; cursor:pointer; white-space:nowrap;
+  }
+  .os-item .servico-toggle:hover{filter:brightness(1.2);}
   .os-item .rodape{display:flex; justify-content:space-between; align-items:center; margin-top:4px;}
   .os-item .valor{font-size:12px; font-weight:600; color:#334155;}
   .os-item .tag-tipo{font-size:9px; color:var(--cinza); text-transform:uppercase; letter-spacing:.3px;}
@@ -1154,7 +1159,7 @@ function renderizarListaOS(){
     return (
       '<button class="os-item" data-chave="'+chaveOS(p)+'" style="border-left-color:'+corSituacao(p.situacao)+'">'+
         '<div class="rodovia">O.S.P. '+p.osp+' — '+rodoviaCurta(p.trecho_nome||'')+(e.semGeometria ? ' <span title="Sem geometria de trecho cadastrada — não aparece no mapa" style="font-size:10px;">📍⚠️</span>' : '')+'</div>'+
-        '<div class="sub">'+rotuloContrato(p.contrato)+' · '+escaparHtml(servicoResumoLista(p))+'</div>'+
+        '<div class="sub">'+subServicoLista(p)+'</div>'+
         '<div class="rodape">'+
           '<span class="badge-situacao" style="background:'+corSituacao(p.situacao)+'">'+rotuloComIcone(p.situacao)+'</span>'+
           (mesesAtivosOS.size ? (mesesAtivosOS.has(p.data_emissao)
@@ -1173,7 +1178,15 @@ function renderizarListaOS(){
   var porChave = {};
   entradas.forEach(function(e){ porChave[chaveOS(e.props)] = e; });
   document.querySelectorAll('#os-lista .os-item').forEach(function(btn){
-    btn.addEventListener('click', function(){ abrirOS(porChave[btn.getAttribute('data-chave')]); });
+    btn.addEventListener('click', function(ev){
+      var chave = btn.getAttribute('data-chave');
+      if(ev.target.closest('.servico-toggle')){  // +/− só abre/fecha o serviço, não abre a O.S.P.
+        if(servicoAbertoOS.has(chave)) servicoAbertoOS.delete(chave); else servicoAbertoOS.add(chave);
+        btn.querySelector('.sub').innerHTML = subServicoLista(porChave[chave].props);
+        return;
+      }
+      abrirOS(porChave[chave]);
+    });
   });
   renderizarCamadaGeral(entradas, porChave);
 
@@ -1878,12 +1891,19 @@ function abrirMedicaoPeloLink(){
 function servicoCompleto(p){
   return (p.servico_itens && p.servico_itens.length) ? p.servico_itens.join(' / ') : (p.servico || '—');
 }
-// Na lista: os 2 primeiros itens com o nome inteiro (sem "..."); o resto fica
-// no detalhe — com tudo na lista, há cartão com 6 mil caracteres (26 itens).
-function servicoResumoLista(p){
+// Na lista: os 2 primeiros itens com o nome inteiro (sem "..."); serviço longo
+// ganha um "+N" que abre o resto ali mesmo e um "−" que recolhe — fechado por
+// padrão porque há cartão com 6 mil caracteres (26 itens).
+var servicoAbertoOS = new Set();  // chaveOS das O.S.P. com o serviço aberto na lista
+function subServicoLista(p){
   var itens = p.servico_itens || [];
-  if(!itens.length) return p.servico || '—';
-  return itens.slice(0, 2).join(' / ') + (itens.length > 2 ? ' (+'+(itens.length - 2)+' itens no detalhe)' : '');
+  var inicio = rotuloContrato(p.contrato)+' · ';
+  if(itens.length <= 2) return inicio + escaparHtml(servicoCompleto(p));
+  if(servicoAbertoOS.has(chaveOS(p)))
+    return inicio + escaparHtml(itens.join(' / ')) +
+      '<span class="servico-toggle" title="Recolher o serviço">−</span>';
+  return inicio + escaparHtml(itens.slice(0, 2).join(' / ')) +
+    '<span class="servico-toggle" title="Ver os '+itens.length+' itens do serviço">+'+(itens.length - 2)+'</span>';
 }
 function blocoServicoCompleto(props){
   var itens = props.servico_itens || [];
