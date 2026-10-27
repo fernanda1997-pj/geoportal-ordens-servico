@@ -338,6 +338,18 @@ def ler_contrato(wb):
     return f'{int(_float_br(codigo)):03d}.{int(_float_br(ano))}'
 
 
+def ler_empresa(wb):
+    """(Empresa, ResponsavelTecnico) da aba CONFIG_CONTRATO — pra tabela de cobrança do site de fotos."""
+    ws = wb['CONFIG_CONTRATO']
+    config = {}
+    for r in range(1, ws.max_row + 1):
+        campo = ws.cell(row=r, column=1).value
+        if campo:
+            config[str(campo).strip()] = ws.cell(row=r, column=2).value
+    limpar = lambda v: str(v).strip() if v not in (None, '') else None
+    return limpar(config.get('Empresa')), limpar(config.get('ResponsavelTecnico'))
+
+
 # ---------------------------------------------------------------------
 # ORCAMENTO_PADRAO (catálogo de preços) + ITENS_OSP (matriz item x O.S.P.)
 # -> "serviço" composto por O.S.P. (ex. "Roçada / Tapa-Buraco CAE").
@@ -742,6 +754,7 @@ def carregar_checklists(wb):
 # ---------------------------------------------------------------------
 CONSOLIDADA = {}  # {contrato: [medição consolidada, ...]} -> dados/consolidada.js
 ITENS_POR_OSP = {}  # {(contrato, osp): [itens de orçamento inteiros]} -> dados/osp_fotos.js
+EMPRESA_POR_CONTRATO = {}  # {contrato: (Empresa, ResponsavelTecnico)} da aba CONFIG_CONTRATO -> dados/osp_fotos.js
 TOLERANCIA_CONSOLIDADA = 1.00
 STATUS_CONSOLIDADA = {
     'APROVADA': 'Aprovada', 'EM ANALISE': 'Em análise', 'CORRECAO': 'Correção',
@@ -1033,6 +1046,7 @@ def processar_banco(caminho, regiao_num_planilha, resultados_por_regiao):
         return
 
     catalogo_itens = carregar_catalogo_itens(wb)
+    EMPRESA_POR_CONTRATO[contrato] = ler_empresa(wb)
     servicos_por_osp, itens_por_osp = carregar_servicos_por_osp(wb, catalogo_itens)
     for osp, itens in itens_por_osp.items():
         ITENS_POR_OSP[(contrato, osp)] = itens
@@ -1221,6 +1235,8 @@ def escrever_osp_fotos(geral):
                     fim_medicao = max(fim_medicao, iso) if fim_medicao else iso
             lista.append({
                 'contrato': p['contrato'], 'osp': p['osp'], 'regiao_os': p['regiao_os'],
+                'empresa': EMPRESA_POR_CONTRATO.get(p['contrato'], (None, None))[0],
+                'responsavel_tecnico': EMPRESA_POR_CONTRATO.get(p['contrato'], (None, None))[1],
                 'trecho': p['trecho_num'], 'trecho_nome': p['trecho_nome'],
                 'situacao': p['situacao_final'], 'valor': p['valor_previsto'],
                 'emissao': p['data_emissao'], 'prazo_limite': p['prazo_limite'], 'fim_medicao': fim_medicao,
