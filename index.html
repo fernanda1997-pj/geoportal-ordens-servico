@@ -1912,8 +1912,12 @@ function blocoServicoCompleto(props){
   var itens = props.servico_itens || [];
   if(itens.length < 2)
     return '<div class="linha"><span class="rot">Serviço</span><span class="val">'+escaparHtml(servicoCompleto(props))+'</span></div>';
-  return '<div class="linha"><span class="rot">Serviço ('+itens.length+' itens)</span><span class="val"><ul>'+
-    itens.map(function(i){ return '<li>'+escaparHtml(i)+'</li>'; }).join('')+'</ul></span></div>';
+  // Fechado por padrão (seta, igual à Justificativa da medição): mostra os 2
+  // primeiros itens; abrindo, a lista inteira.
+  return '<div class="linha"><span class="rot">Serviço ('+itens.length+' itens)</span><span class="val">'+
+    '<details><summary style="cursor:pointer;">'+escaparHtml(itens.slice(0, 2).join(' / '))+
+    ' <span style="color:var(--cinza);font-weight:400;font-size:10.5px;">(+'+(itens.length - 2)+' itens)</span></summary><ul style="margin-top:3px;">'+
+    itens.map(function(i){ return '<li>'+escaparHtml(i)+'</li>'; }).join('')+'</ul></details></span></div>';
 }
 
 // Mínimo de fotos do relatório fotográfico — checklist da supervisão
