@@ -1635,14 +1635,16 @@ function blocoChecklist(c){
 // Com o ID (índice do Apps Script, ver apps_script/indice_pdfs.gs) abre o PDF
 // direto; sem ele, cai na BUSCA do Drive pelo nome exato (PDF subido depois
 // do último índice). Nos dois casos, quem não tem acesso à pasta
-// SISTEMA_AGETO não abre.
+// SISTEMA_AGETO não abre. Com 'url' o PDF está no próprio site
+// (dados/medicoes_consolidadas/) e abre pra qualquer um.
 function urlDriveDoc(d){
+  if(d.url) return d.url;
   if(d.id) return 'https://drive.google.com/file/d/'+encodeURIComponent(d.id)+'/view';
   return 'https://drive.google.com/drive/search?q='+encodeURIComponent('"'+d.arquivo+'"');
 }
 function chipDoc(d){
   if(!d.no_drive) return '<span class="chip-doc sem-arquivo" title="Este PDF ainda não está no Drive: '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+'</span>';
-  return '<a class="chip-doc" target="_blank" rel="noopener" data-arquivo="'+escaparHtml(d.arquivo)+'" href="'+urlDriveDoc(d)+'" title="'+(d.id ? 'Abrir PDF' : 'Buscar no Drive')+': '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+' ↗</a>';
+  return '<a class="chip-doc" target="_blank" rel="noopener" data-arquivo="'+escaparHtml(d.arquivo)+'" href="'+urlDriveDoc(d)+'" title="'+(d.id || d.url ? 'Abrir PDF' : 'Buscar no Drive')+': '+escaparHtml(d.arquivo)+'">'+escaparHtml(d.tipo)+' ↗</a>';
 }
 
 // Levantamento / inventário da O.S.P. (PDFs de INVENTARIOS_PDF no Drive).

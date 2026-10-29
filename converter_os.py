@@ -833,6 +833,30 @@ def carregar_pdfs_consolidada(pasta):
     return por_n
 
 
+# Página da planilha consolidada recortada do PDF assinado da medição (o PDF
+# inteiro não está no Drive do SISTEMA_AGETO). Fica DENTRO do site, em
+# dados/medicoes_consolidadas/, com nome "<contrato>_MED<nº>_....pdf" (ex.
+# "1452.2026_MED03_planilha_consolidada.pdf") — publicado junto com a pasta
+# dados, então abre direto pela URL do site, sem precisar de acesso ao Drive.
+PASTA_PLANILHAS_CONSOLIDADAS = os.path.join(DADOS_DIR, 'medicoes_consolidadas')
+
+
+def anexar_planilhas_consolidadas(consolidada):
+    if not os.path.isdir(PASTA_PLANILHAS_CONSOLIDADAS):
+        return
+    for f in sorted(os.listdir(PASTA_PLANILHAS_CONSOLIDADAS)):
+        m = re.match(r'^(\d+\.\d{4})_MED(\d+)', f, flags=re.I)
+        if not (m and f.lower().endswith('.pdf')):
+            continue
+        contrato, n = m.group(1), int(m.group(2))
+        medicao = next((i for i in consolidada.get(contrato, []) if i['n'] == n), None)
+        if medicao is None:
+            qa(f'dados/medicoes_consolidadas/{f}: não há {n}ª medição consolidada do contrato {contrato} no banco')
+            continue
+        medicao['docs'].insert(0, {'tipo': 'Planilha consolidada', 'arquivo': f, 'no_drive': True,
+                                   'url': f'dados/medicoes_consolidadas/{f}'})
+
+
 OBS_SEM_VALOR = {'ATENDIDO', 'OK', 'SIM', 'NA', 'N', 'X', 'N/A', 'NAO SE APLICA', 'CONFORME', 'ADEQUADO'}
 
 
@@ -1289,6 +1313,7 @@ def main():
         total_osp += n_osp
         print(f'  -> dados/{nome_arquivo} ({len(feats)} feature(s), {n_osp} O.S.P.+trecho)')
 
+    anexar_planilhas_consolidadas(CONSOLIDADA)
     with open(os.path.join(DADOS_DIR, 'consolidada.js'), 'w', encoding='utf-8') as f:
         f.write('// Gerado por converter_os.py — não editar à mão\n')
         f.write('window.CONSOLIDADA_OS = ' + json.dumps(CONSOLIDADA, ensure_ascii=False) + ';\n')
