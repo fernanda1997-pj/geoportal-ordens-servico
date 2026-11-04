@@ -329,6 +329,13 @@ a.chip-doc{text-decoration:none;}
 .mm-linha:hover{background:#F1F5F9;}
 .mm-linha small{display:block; color:var(--cinza); font-size:10.5px; margin-top:1px;}
 .mm-linha .mm-valor{white-space:nowrap; text-align:right;}
+.mm-btn-grafico{padding:7px 10px; border:1px solid var(--borda); border-radius:6px; background:#fff; color:var(--azul); font-family:inherit; font-size:13px; cursor:pointer; white-space:nowrap;}
+.mm-btn-grafico:hover{background:#EFF6FF;}
+.mm-btn-grafico.ativo{background:var(--azul); color:#fff; border-color:var(--azul);}
+#medmes-grafico-box{display:none; padding:2px 16px 8px;}
+#medmes-grafico-box.aberto{display:block;}
+.mm-graf-legenda{font-size:10.5px; color:var(--cinza); margin-bottom:4px;}
+.mm-grupo-mes{display:flex; justify-content:space-between; gap:8px; position:sticky; top:0; z-index:1; background:#EFF6FF; border:1px solid #BFDBFE; border-radius:6px; padding:5px 8px; margin:10px 0 2px; font-size:12px; color:var(--azul);}
 
 /* ---------- Medição consolidada (valor do contrato x soma das O.S.P.) ---------- */
 .mm-consol{border:1px solid var(--borda); border-radius:8px; padding:8px 10px; margin:6px 0; background:#F8FAFC; font-size:12px;}
@@ -385,7 +392,7 @@ a.chip-doc{text-decoration:none;}
         </div>
       </div>
       <button class="btn-header" id="btn-painel-executivo" title="Abrir painel de apresentação com KPIs e gráficos">📊 Painel Executivo</button>
-      <button class="btn-header" id="btn-medicoes-mes" style="margin-top:6px;" title="Pesquisa rápida das medições de um mês">📏 Medições por mês</button>
+      <button class="btn-header" id="btn-medicoes-mes" style="margin-top:6px;" title="Medições de um mês ou de todos os meses, com gráfico">📏 Medições</button>
     </header>
     <div class="conteudo" id="painel-os">
       <div class="kpis-grade">
@@ -459,11 +466,16 @@ a.chip-doc{text-decoration:none;}
 
   <div id="medmes-overlay">
     <div id="medmes-caixa">
-      <div class="mm-cabeca"><h2>📏 Medições por mês</h2><button type="button" id="medmes-fechar">✕ Fechar</button></div>
+      <div class="mm-cabeca"><h2>📏 Medições</h2><button type="button" id="medmes-fechar">✕ Fechar</button></div>
       <div class="mm-controles">
         <select id="medmes-sel-mes"></select>
         <select id="medmes-sel-regiao"></select>
         <input type="text" id="medmes-busca" placeholder="🔎 Filtrar por O.S.P., rodovia, empresa ou situação&hellip;" autocomplete="off">
+        <button type="button" id="medmes-btn-grafico" class="mm-btn-grafico" title="Mostrar/esconder o gráfico das medições mês a mês">📈 Gráfico</button>
+      </div>
+      <div id="medmes-grafico-box">
+        <div class="mm-graf-legenda">Medido por mês (barras, por região) e acumulado (linha) — respeita a região e a busca. Clique numa barra para ver as medições daquele mês.</div>
+        <div style="position:relative;height:240px;"><canvas id="medmes-grafico"></canvas></div>
       </div>
       <div id="medmes-resumo"></div>
       <div id="medmes-lista"></div>
@@ -1771,22 +1783,19 @@ document.addEventListener('click', function(ev){
 // daquele mês (de todas as O.S.P. carregadas, independente dos filtros da
 // lateral), com total e filtro de texto. Clicar numa linha abre a O.S.P.
 // ---------------------------------------------------------------------
+var TODOS_MESES_MED = '*'; // valor da opção "Todos os meses" no select da janela
 function medicoesDoMes(mes){
   var linhas = [];
   entradasUnicasOS(todasFeaturesOS()).forEach(function(e){
     (e.props.medicoes || []).forEach(function(m){
-      if(m.mes === mes) linhas.push({entrada: e, med: m});
+      if(mes === TODOS_MESES_MED || m.mes === mes) linhas.push({entrada: e, med: m});
     });
   });
   return linhas;
 }
-var focoContratoMed = null; // contrato em destaque (vem do link ?medicao=contrato-nº)
-function renderMedicoesMes(){
-  var mes = document.getElementById('medmes-sel-mes').value;
-  var busca = _semAcento(document.getElementById('medmes-busca').value.trim());
-  var regiao = document.getElementById('medmes-sel-regiao').value;
-  var foco = focoContratoMed;
-  var linhas = medicoesDoMes(mes).filter(function(l){
+// Região, contrato em foco (link) e busca de texto — valem para a lista e para o gráfico.
+function filtrarLinhasMed(linhas, regiao, foco, busca){
+  return linhas.filter(function(l){
     if(regiao && l.entrada.props.regiao_os !== regiao) return false;
     if(foco && l.entrada.props.contrato !== foco) return false;
     if(!busca) return true;
@@ -1794,23 +1803,121 @@ function renderMedicoesMes(){
     var alvo = _semAcento([p.osp, p.contrato, p.contrato+'.'+String(p.osp).padStart(4,'0'), rotuloContrato(p.contrato), p.trecho_nome, l.med.status, servicoCompleto(p)].join(' '));
     return alvo.indexOf(busca) !== -1;
   });
-  linhas.sort(function(a, b){ return (b.med.valor || 0) - (a.med.valor || 0); });
+}
+function linhaMedHtml(l, idx){
+  var p = l.entrada.props, m = l.med;
+  return '<div class="mm-linha" data-idx="'+idx+'">'+
+    '<div><b>O.S.P. '+p.osp+'</b> · '+escaparHtml(rodoviaCurta(p.trecho_nome || ''))+
+      '<small>'+escaparHtml(rotuloContrato(p.contrato))+' · '+escaparHtml(rotuloRegiao(p.regiao_os))+
+      (m.n != null ? ' · '+m.n+'ª medição' : '')+(m.periodo ? ' · '+escaparHtml(m.periodo) : '')+'</small></div>'+
+    '<div class="mm-valor"><b>'+fmtReais(m.valor || 0)+'</b><small style="color:'+corSituacao(m.status)+';font-weight:600;">'+escaparHtml(m.status || '')+'</small></div>'+
+    '</div>';
+}
+var focoContratoMed = null; // contrato em destaque (vem do link ?medicao=contrato-nº)
+function renderMedicoesMes(){
+  var mes = document.getElementById('medmes-sel-mes').value;
+  var todos = mes === TODOS_MESES_MED;
+  var busca = _semAcento(document.getElementById('medmes-busca').value.trim());
+  var regiao = document.getElementById('medmes-sel-regiao').value;
+  var foco = focoContratoMed;
+  var todasFiltradas = filtrarLinhasMed(medicoesDoMes(TODOS_MESES_MED), regiao, foco, busca);
+  renderGraficoMedicoes(todasFiltradas, regiao);
+  var linhas = todos ? todasFiltradas : todasFiltradas.filter(function(l){ return l.med.mes === mes; });
+  var ordemMes = {};
+  ordenarMesesEmissao(Object.keys(linhas.reduce(function(o, l){ o[l.med.mes] = 1; return o; }, {})))
+    .forEach(function(m, i){ ordemMes[m] = i; });
+  // Todos os meses: do mais recente para o mais antigo; dentro do mês, maior valor primeiro.
+  linhas.sort(function(a, b){
+    return (ordemMes[b.med.mes] - ordemMes[a.med.mes]) || ((b.med.valor || 0) - (a.med.valor || 0));
+  });
   var total = linhas.reduce(function(s, l){ return s + (l.med.valor || 0); }, 0);
+  var ondeTxt = todos ? 'em todos os meses' : 'em '+escaparHtml(mes);
+  var nMeses = Object.keys(ordemMes).length;
   document.getElementById('medmes-resumo').innerHTML = linhas.length
-    ? '<b>'+linhas.length+(linhas.length > 1 ? ' medições' : ' medição')+'</b> em '+escaparHtml(mes)+' · total <b>'+fmtReais(total)+'</b>'
-    : 'Nenhuma medição encontrada em '+escaparHtml(mes)+'.';
-  document.getElementById('medmes-lista').innerHTML = (foco ? '<div class="mm-foco">🔗 Mostrando só <b>'+escaparHtml(rotuloContrato(foco))+'</b> em '+escaparHtml(mes)+' · <a data-acao="ver-todos">ver todos do mês</a></div>' : '')+
-    cardsConsolidadaMes(mes, regiao, foco) + linhas.map(function(l, idx){
-    var p = l.entrada.props, m = l.med;
-    return '<div class="mm-linha" data-idx="'+idx+'">'+
-      '<div><b>O.S.P. '+p.osp+'</b> · '+escaparHtml(rodoviaCurta(p.trecho_nome || ''))+
-        '<small>'+escaparHtml(rotuloContrato(p.contrato))+' · '+escaparHtml(rotuloRegiao(p.regiao_os))+
-        (m.n != null ? ' · '+m.n+'ª medição' : '')+(m.periodo ? ' · '+escaparHtml(m.periodo) : '')+'</small></div>'+
-      '<div class="mm-valor"><b>'+fmtReais(m.valor || 0)+'</b><small style="color:'+corSituacao(m.status)+';font-weight:600;">'+escaparHtml(m.status || '')+'</small></div>'+
-      '</div>';
-  }).join('');
+    ? '<b>'+linhas.length+(linhas.length > 1 ? ' medições' : ' medição')+'</b> '+ondeTxt+
+      (todos ? ' ('+nMeses+(nMeses > 1 ? ' meses' : ' mês')+')' : '')+' · total <b>'+fmtReais(total)+'</b>'
+    : 'Nenhuma medição encontrada '+ondeTxt+'.';
+  var html;
+  if(todos){
+    // Agrupa por mês, com o subtotal no cabeçalho de cada grupo. A consolidada
+    // só aparece escolhendo um mês (senão a janela vira uma lista enorme de cartões).
+    var subtotal = {}, qtd = {};
+    linhas.forEach(function(l){ subtotal[l.med.mes] = (subtotal[l.med.mes] || 0) + (l.med.valor || 0); qtd[l.med.mes] = (qtd[l.med.mes] || 0) + 1; });
+    var mesAnterior = null;
+    html = linhas.map(function(l, idx){
+      var cab = '';
+      if(l.med.mes !== mesAnterior){
+        mesAnterior = l.med.mes;
+        cab = '<div class="mm-grupo-mes"><b>'+escaparHtml(l.med.mes)+'</b><span>'+qtd[l.med.mes]+(qtd[l.med.mes] > 1 ? ' medições' : ' medição')+' · <b>'+fmtReais(subtotal[l.med.mes])+'</b></span></div>';
+      }
+      return cab + linhaMedHtml(l, idx);
+    }).join('');
+  }else{
+    html = cardsConsolidadaMes(mes, regiao, foco) + linhas.map(linhaMedHtml).join('');
+  }
+  document.getElementById('medmes-lista').innerHTML = (foco ? '<div class="mm-foco">🔗 Mostrando só <b>'+escaparHtml(rotuloContrato(foco))+'</b> '+ondeTxt+' · <a data-acao="ver-todos">ver todos'+(todos ? '' : ' do mês')+'</a></div>' : '')+html;
   document.getElementById('medmes-lista')._linhas = linhas;
 }
+
+// Gráfico da janela de medições: barras empilhadas por região (medido no mês) +
+// linha do acumulado. Mostra sempre a série inteira (todos os meses), com o mês
+// escolhido em destaque; clicar numa barra seleciona aquele mês.
+var CORES_REGIAO_MED = ['#1E3A72','#2563EB','#0EA5E9','#14B8A6','#16A34A','#84CC16','#EAB308','#F59E0B','#EA580C','#DC2626','#DB2777','#9333EA','#64748B'];
+var graficoMedicoes = null;
+var graficoMedAberto = false;
+try{ graficoMedAberto = localStorage.getItem('os-medmes-grafico') === '1'; }catch(e){}
+function renderGraficoMedicoes(linhas, regiaoFiltro){
+  var box = document.getElementById('medmes-grafico-box');
+  box.classList.toggle('aberto', graficoMedAberto);
+  document.getElementById('medmes-btn-grafico').classList.toggle('ativo', graficoMedAberto);
+  if(!graficoMedAberto || typeof Chart === 'undefined'){ if(graficoMedicoes){ graficoMedicoes.destroy(); graficoMedicoes = null; } return; }
+  var meses = ordenarMesesEmissao(Object.keys(linhas.reduce(function(o, l){ o[l.med.mes] = 1; return o; }, {})));
+  var porRegiao = {};
+  linhas.forEach(function(l){
+    var r = l.entrada.props.regiao_os;
+    if(!porRegiao[r]) porRegiao[r] = {};
+    porRegiao[r][l.med.mes] = (porRegiao[r][l.med.mes] || 0) + (l.med.valor || 0);
+  });
+  var regioes = Object.keys(porRegiao).sort(function(a, b){ return a.localeCompare(b, undefined, {numeric:true}); });
+  var mesSel = document.getElementById('medmes-sel-mes').value;
+  var datasets = regioes.map(function(r, i){
+    var cor = CORES_REGIAO_MED[i % CORES_REGIAO_MED.length];
+    return {type:'bar', label: rotuloRegiao(r), stack:'medido', yAxisID:'y', borderRadius:2,
+      data: meses.map(function(m){ return porRegiao[r][m] || 0; }),
+      // Com um mês escolhido, os outros meses ficam esmaecidos.
+      backgroundColor: meses.map(function(m){ return (mesSel === TODOS_MESES_MED || m === mesSel) ? cor : cor+'55'; })};
+  });
+  var acum = 0;
+  datasets.push({type:'line', label:'Acumulado', yAxisID:'y1', borderColor:'#D97706', backgroundColor:'#D97706',
+    borderDash:[5,3], tension:.25, pointRadius:3, order:-1,
+    data: meses.map(function(m){ regioes.forEach(function(r){ acum += porRegiao[r][m] || 0; }); return acum; })});
+  if(graficoMedicoes) graficoMedicoes.destroy();
+  graficoMedicoes = new Chart(document.getElementById('medmes-grafico'), {
+    data:{ labels: meses.map(function(m){ var p = m.split('/'); return p[0].slice(0,3)+'/'+(p[1] || '').slice(-2); }), datasets: datasets },
+    options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index', intersect:false},
+      scales:{ x:{stacked:true}, y:{stacked:true, ticks:{callback: fmtReaisCompacto}, title:{display:true, text:'Medido no mês'}},
+        y1:{position:'right', grid:{drawOnChartArea:false}, ticks:{callback: fmtReaisCompacto}, title:{display:true, text:'Acumulado'}} },
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:10, font:{size:10.5}}},
+        tooltip:{ filter:function(it){ return it.raw !== 0; },
+          callbacks:{ title:function(it){ return meses[it[0].dataIndex]; },
+            label:function(ctx){ return ctx.dataset.label+': '+fmtReais(ctx.raw); },
+            footer:function(it){
+              var tot = it.filter(function(x){ return x.dataset.type === 'bar'; }).reduce(function(s, x){ return s + x.raw; }, 0);
+              return 'Total do mês: '+fmtReais(tot);
+            } } } },
+      onClick:function(ev, els){
+        if(!els.length) return;
+        document.getElementById('medmes-sel-mes').value = meses[els[0].index];
+        // Fora do evento: recriar o gráfico dentro do próprio onClick quebra o Chart.js.
+        setTimeout(renderMedicoesMes, 0);
+      } },
+  });
+}
+document.getElementById('medmes-btn-grafico').addEventListener('click', function(){
+  graficoMedAberto = !graficoMedAberto;
+  try{ localStorage.setItem('os-medmes-grafico', graficoMedAberto ? '1' : '0'); }catch(e){}
+  renderMedicoesMes();
+});
 function _semAcento(t){ return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
 function abrirJanelaMedicoes(mesPreferido, regiaoPreferida){
   var meses = {};
@@ -1826,8 +1933,10 @@ function abrirJanelaMedicoes(mesPreferido, regiaoPreferida){
   var lista = ordenarMesesEmissao(Object.keys(meses));
   var sel = document.getElementById('medmes-sel-mes');
   var atual = sel.value;
-  sel.innerHTML = lista.map(function(m){ return '<option value="'+escaparHtml(m)+'">'+escaparHtml(m)+'</option>'; }).join('');
-  sel.value = mesPreferido && lista.indexOf(mesPreferido) !== -1 ? mesPreferido : (lista.indexOf(atual) !== -1 ? atual : lista[lista.length - 1]);
+  sel.innerHTML = '<option value="'+TODOS_MESES_MED+'">📅 Todos os meses</option>'+
+    lista.map(function(m){ return '<option value="'+escaparHtml(m)+'">'+escaparHtml(m)+'</option>'; }).join('');
+  sel.value = mesPreferido && lista.indexOf(mesPreferido) !== -1 ? mesPreferido
+    : ((atual === TODOS_MESES_MED || lista.indexOf(atual) !== -1) ? atual : lista[lista.length - 1]);
   document.getElementById('medmes-overlay').classList.add('aberto');
   renderMedicoesMes();
 }
